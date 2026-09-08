@@ -35,12 +35,13 @@ func writeTestIndex(t *testing.T, idx *scip.Index) string {
 //
 // Shape:
 //
-//	animal.go            defines Animal#Speak(), referenced 3× (zoo.go ×2, handler.go ×1)
+//	animal.go            defines Animal (type) + Animal#Speak(); Speak referenced 3× (zoo.go ×2, handler.go ×1)
 //	dog.go               defines Dog#Speak() + Puppy#Speak(); Dog implements Animal, Puppy implements Dog
 //	util/helper.go       defines Unrelated#Helper(), referenced in services/zoo.go
 //	services/zoo.go      references Animal#Speak() ×2, Unrelated#Helper() ×1
 //	services/handler.go  references Animal#Speak() ×1
 func fixtureIndex() *scip.Index {
+	animalType := "go github.com/example/animal Animal."
 	animalSpeak := "go github.com/example/animal Animal#Speak()."
 	dogSpeak := "go github.com/example/animal Dog#Speak()."
 	puppySpeak := "go github.com/example/animal Puppy#Speak()."
@@ -65,7 +66,10 @@ func fixtureIndex() *scip.Index {
 		Documents: []*scip.Document{
 			{
 				RelativePath: "animal.go",
-				Occurrences:  []*scip.Occurrence{def(animalSpeak, 2)},
+				Occurrences: []*scip.Occurrence{
+					def(animalType, 1),
+					def(animalSpeak, 2),
+				},
 				Symbols: []*scip.SymbolInformation{{
 					Symbol: animalSpeak,
 					Relationships: []*scip.Relationship{{
@@ -315,8 +319,11 @@ func TestAccessors(t *testing.T) {
 	})
 
 	t.Run("defined symbols", func(t *testing.T) {
+		// Byte-order sort: '#' (0x23) < '.' (0x2E), so Animal#Speak()
+		// precedes Animal.
 		want := []string{
 			"go github.com/example/animal Animal#Speak().",
+			"go github.com/example/animal Animal.",
 			"go github.com/example/animal Dog#Speak().",
 			"go github.com/example/animal Puppy#Speak().",
 			"go github.com/example/util Unrelated#Helper().",

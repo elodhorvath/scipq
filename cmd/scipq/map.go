@@ -72,7 +72,28 @@ func shortSymbol(sym string) string {
 		s = s[i+1:]
 	}
 	s = strings.TrimRight(s, "().")
+	if s == "" {
+		// Type-level symbol (e.g. "...xunit.assert Xunit/Assert#"): the
+		// member position is empty, so take the last path segment before
+		// the trailing descriptor separator.
+		head := sym
+		if i := strings.LastIndex(head, " "); i >= 0 {
+			head = head[i+1:]
+		}
+		head = strings.TrimRight(head, "#().")
+		if j := strings.LastIndexAny(head, "/#"); j >= 0 {
+			s = head[j+1:]
+		} else {
+			s = head
+		}
+	}
 	return s
+}
+
+// isParamFragment reports whether a symbol is a parameter occurrence
+// (scip-dotnet style "...(param)" suffix) — noise in orientation output.
+func isParamFragment(sym string) bool {
+	return strings.HasSuffix(sym, "(param)")
 }
 
 // computeMap builds the map result from the reverse index: per-directory
@@ -103,9 +124,13 @@ func computeMap(ri *index.ReverseIndex, clusterLimit int) MapResult {
 		filesByDir[d] = append(filesByDir[d], f)
 	}
 
-	// Count references received per (directory, symbol) pair.
+	// Count references received per (directory, symbol) pair. Parameter
+	// fragments are excluded — they are noise in orientation output.
 	hubCounts := map[string]map[string]int{}
 	for sym, sites := range ri.RefsAll() {
+		if isParamFragment(sym) {
+			continue
+		}
 		dir, ok := symDir[sym]
 		if !ok {
 			continue // referenced but never defined in this index

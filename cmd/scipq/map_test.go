@@ -45,9 +45,9 @@ func TestComputeMap(t *testing.T) {
 		wantClusters int
 		wantTrunc    bool
 	}{
-		{"all clusters", -1, 5, 4, 3, false},
-		{"default limit", defaultClusterLimit, 5, 4, 3, false},
-		{"limit 1 truncates", 1, 5, 4, 1, true},
+		{"all clusters", -1, 5, 5, 3, false},
+		{"default limit", defaultClusterLimit, 5, 5, 3, false},
+		{"limit 1 truncates", 1, 5, 5, 1, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -79,7 +79,7 @@ func TestComputeMapClusters(t *testing.T) {
 		topHub     string
 		topHubRefs int
 	}{
-		{".", 2, 3, "Speak", 3},
+		{".", 2, 4, "Speak", 3},
 		{"util", 1, 1, "Helper", 1},
 		{"services", 2, 0, "", 0},
 	}
@@ -145,8 +145,8 @@ func TestRunMapHuman(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"5 files · 4 symbols",
-		"./  2 files · 3 symbols   hubs: Speak (3←)",
+		"5 files · 5 symbols",
+		"./  2 files · 4 symbols   hubs: Speak (3←)",
 		"util/  1 files · 1 symbols   hubs: Helper (1←)",
 		"services/  2 files · 0 symbols",
 		"hotspots:",
@@ -173,8 +173,8 @@ func TestRunMapJSON(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &res); err != nil {
 		t.Fatalf("stdout is not valid JSON: %v\n%s", err, out.String())
 	}
-	if res.Files != 5 || res.Symbols != 4 {
-		t.Errorf("JSON totals = %d/%d, want 5/4", res.Files, res.Symbols)
+	if res.Files != 5 || res.Symbols != 5 {
+		t.Errorf("JSON totals = %d/%d, want 5/5", res.Files, res.Symbols)
 	}
 	if len(res.Clusters) != 3 {
 		t.Errorf("JSON clusters = %d, want 3", len(res.Clusters))
@@ -253,11 +253,42 @@ func TestShortSymbol(t *testing.T) {
 		{"go github.com/example/animal Animal#Speak().", "Speak"},
 		{"go github.com/example/util Unrelated#Helper().", "Helper"},
 		{"go github.com/example/animal Animal", "Animal"},
+		// Type-level symbol: empty member position after '#'.
+		{"csharp LMSExtract, Services LMSExtract.Services/Xunit/Assert#", "Assert"},
+		{"go github.com/example/animal Animal#", "Animal"},
 		{"", ""},
 	}
 	for _, tt := range tests {
 		if got := shortSymbol(tt.in); got != tt.want {
 			t.Errorf("shortSymbol(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestHubsAreNonEmpty(t *testing.T) {
+	// Review gate: hub names must never render empty, whatever the symbol
+	// shape (method, type-level, parameter fragment).
+	ri := loadFixtureIndex(t)
+	res := computeMap(ri, -1)
+	for _, c := range res.Clusters {
+		for _, h := range c.Hubs {
+			if h.Symbol == "" {
+				t.Errorf("cluster %q has a hub with empty name (refs=%d)", c.Dir, h.Refs)
+			}
+		}
+	}
+}
+
+func TestParamFragmentsExcluded(t *testing.T) {
+	// scip-dotnet parameter fragments ("...(param)") are noise in
+	// orientation output and must not appear as hubs.
+	ri := loadFixtureIndex(t)
+	res := computeMap(ri, -1)
+	for _, c := range res.Clusters {
+		for _, h := range c.Hubs {
+			if contains(h.Symbol, "(param") || contains(h.Symbol, ")") {
+				t.Errorf("cluster %q hub %q looks like a parameter fragment", c.Dir, h.Symbol)
+			}
 		}
 	}
 }
