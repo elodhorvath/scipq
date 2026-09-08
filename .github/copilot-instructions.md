@@ -43,6 +43,10 @@ When the user says "work on issue N" (or similar):
    Keep the PR to one issue's scope.
 7. **Never merge your own PR.** Open it and stop — the maintainer reviews and
    merges. Do not click merge, even if checks pass.
+   - **Review findings are fixed pre-merge, not deferred.** If a reviewer
+     notes a concrete issue (correctness, style, a stdlib replacement for
+     hand-rolled code), apply it to the PR branch and push — do not park it
+     in a "later" pile. Deferred findings are a tax on every future reader.
 8. **If the issue spans multiple PRs**: note it in the issue, keep each PR
    narrow and self-contained, reference the issue in every PR.
 9. **Commit author**: use the user's existing git config; never invent an
