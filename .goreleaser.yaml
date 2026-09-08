@@ -1,0 +1,52 @@
+version: 2
+
+project_name: scipq
+
+builds:
+  - id: scipq
+    main: ./cmd/scipq
+    binary: scipq
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^test:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  draft: false
+  prerelease: auto
+  mode: append
+  header: |
+    ## scipq {{ .Tag }}
+
+    **Deterministic code-graph queries over any SCIP index.** No LLM, no telemetry.
+
+    Install: `go install github.com/elodhorvath/scipq@{{ .Tag }}`

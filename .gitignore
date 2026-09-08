@@ -1,0 +1,13 @@
+# directories
+testdata/index.scip
+dist/
+
+# built binaries — release assets only, never committed
+scipq
+scipq.exe
+*.exe
+
+# Go
+*.test
+*.out
+coverage.txt
