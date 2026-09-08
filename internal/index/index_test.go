@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	scip "github.com/scip-code/scip/bindings/go/scip"
@@ -28,15 +30,18 @@ func writeTestIndex(t *testing.T, idx *scip.Index) string {
 }
 
 // fixtureIndex builds a small synthetic SCIP index exercising refs, defs,
-// and implements chains. Symbols use the scip-go naming scheme.
+// and implements chains across multiple directories. Symbols use the scip-go
+// naming scheme.
 //
 // Shape:
 //
-//	Animal#Speak()      defined in animal.go:2, referenced in zoo.go:10
-//	Dog#Speak()         defined in dog.go:3, implements Animal#Speak()
-//	Puppy#Speak()       defined in dog.go:9, implements Dog#Speak()
-//	Unrelated#Helper()  defined in util.go:1, referenced in zoo.go:12
+//	animal.go            defines Animal (type) + Animal#Speak(); Speak referenced 3× (zoo.go ×2, handler.go ×1)
+//	dog.go               defines Dog#Speak() + Puppy#Speak(); Dog implements Animal, Puppy implements Dog
+//	util/helper.go       defines Unrelated#Helper(), referenced in services/zoo.go
+//	services/zoo.go      references Animal#Speak() ×2, Unrelated#Helper() ×1
+//	services/handler.go  references Animal#Speak() ×1
 func fixtureIndex() *scip.Index {
+	animalType := "go github.com/example/animal Animal."
 	animalSpeak := "go github.com/example/animal Animal#Speak()."
 	dogSpeak := "go github.com/example/animal Dog#Speak()."
 	puppySpeak := "go github.com/example/animal Puppy#Speak()."
@@ -61,7 +66,10 @@ func fixtureIndex() *scip.Index {
 		Documents: []*scip.Document{
 			{
 				RelativePath: "animal.go",
-				Occurrences:  []*scip.Occurrence{def(animalSpeak, 2)},
+				Occurrences: []*scip.Occurrence{
+					def(animalType, 1),
+					def(animalSpeak, 2),
+				},
 				Symbols: []*scip.SymbolInformation{{
 					Symbol: animalSpeak,
 					Relationships: []*scip.Relationship{{
@@ -85,14 +93,21 @@ func fixtureIndex() *scip.Index {
 				}},
 			},
 			{
-				RelativePath: "util.go",
+				RelativePath: "util/helper.go",
 				Occurrences:  []*scip.Occurrence{def(unrelated, 1)},
 			},
 			{
-				RelativePath: "zoo.go",
+				RelativePath: "services/zoo.go",
 				Occurrences: []*scip.Occurrence{
 					ref(animalSpeak, 10),
+					ref(animalSpeak, 14),
 					ref(unrelated, 12),
+				},
+			},
+			{
+				RelativePath: "services/handler.go",
+				Occurrences: []*scip.Occurrence{
+					ref(animalSpeak, 4),
 				},
 			},
 		},
@@ -115,7 +130,7 @@ func TestLoad(t *testing.T) {
 			{"go github.com/example/animal Animal#Speak().", []Site{{File: "animal.go", Line: 2}}},
 			{"go github.com/example/animal Dog#Speak().", []Site{{File: "dog.go", Line: 3}}},
 			{"go github.com/example/animal Puppy#Speak().", []Site{{File: "dog.go", Line: 9}}},
-			{"go github.com/example/util Unrelated#Helper().", []Site{{File: "util.go", Line: 1}}},
+			{"go github.com/example/util Unrelated#Helper().", []Site{{File: "util/helper.go", Line: 1}}},
 			{"go github.com/example/missing Missing#Thing().", nil},
 		}
 		for _, tt := range tests {
@@ -136,8 +151,14 @@ func TestLoad(t *testing.T) {
 			symbol string
 			want   []Site
 		}{
-			{"go github.com/example/animal Animal#Speak().", []Site{{File: "zoo.go", Line: 10}}},
-			{"go github.com/example/util Unrelated#Helper().", []Site{{File: "zoo.go", Line: 12}}},
+			// Order follows document arrival order in the fixture
+			// (services/zoo.go precedes services/handler.go).
+			{"go github.com/example/animal Animal#Speak().", []Site{
+				{File: "services/zoo.go", Line: 10},
+				{File: "services/zoo.go", Line: 14},
+				{File: "services/handler.go", Line: 4},
+			}},
+			{"go github.com/example/util Unrelated#Helper().", []Site{{File: "services/zoo.go", Line: 12}}},
 			{"go github.com/example/animal Dog#Speak().", nil},
 		}
 		for _, tt := range tests {
@@ -269,10 +290,75 @@ func TestParseStreamingVisitorContract(t *testing.T) {
 	if err := visitor.ParseStreaming(context.Background(), bytes.NewReader(data)); err != nil {
 		t.Fatalf("ParseStreaming: %v", err)
 	}
-	if docs != 4 {
-		t.Errorf("visited %d documents, want 4", docs)
+	if docs != 5 {
+		t.Errorf("visited %d documents, want 5", docs)
 	}
 	if ext != 0 {
 		t.Errorf("visited %d external symbols, want 0", ext)
 	}
+}
+
+func TestAccessors(t *testing.T) {
+	ri, err := Load(writeTestIndex(t, fixtureIndex()))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	t.Run("files", func(t *testing.T) {
+		want := []string{
+			"animal.go",
+			"dog.go",
+			"services/handler.go",
+			"services/zoo.go",
+			"util/helper.go",
+		}
+		got := ri.Files()
+		if !slices.Equal(got, want) {
+			t.Errorf("Files() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("defined symbols", func(t *testing.T) {
+		// Byte-order sort: '#' (0x23) < '.' (0x2E), so Animal#Speak()
+		// precedes Animal.
+		want := []string{
+			"go github.com/example/animal Animal#Speak().",
+			"go github.com/example/animal Animal.",
+			"go github.com/example/animal Dog#Speak().",
+			"go github.com/example/animal Puppy#Speak().",
+			"go github.com/example/util Unrelated#Helper().",
+		}
+		got := ri.DefinedSymbols()
+		if !slices.Equal(got, want) {
+			t.Errorf("DefinedSymbols() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("ref counts", func(t *testing.T) {
+		tests := []struct {
+			symbol string
+			want   int
+		}{
+			{"go github.com/example/animal Animal#Speak().", 3},
+			{"go github.com/example/util Unrelated#Helper().", 1},
+			{"go github.com/example/animal Dog#Speak().", 0},
+			{"go github.com/example/missing Missing#Thing().", 0},
+		}
+		for _, tt := range tests {
+			if got := ri.RefCount(tt.symbol); got != tt.want {
+				t.Errorf("RefCount(%q) = %d, want %d", tt.symbol, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("file ref counts", func(t *testing.T) {
+		want := map[string]int{
+			"services/zoo.go":     3,
+			"services/handler.go": 1,
+		}
+		got := ri.FileRefCounts()
+		if !maps.Equal(got, want) {
+			t.Errorf("FileRefCounts() = %v, want %v", got, want)
+		}
+	})
 }

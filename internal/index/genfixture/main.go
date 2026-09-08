@@ -31,8 +31,11 @@ func main() {
 }
 
 // fixture builds the same synthetic index shape as the unit-test fixture:
-// an Animal/Dog/Puppy implements chain plus an unrelated helper symbol.
+// an Animal type + Animal/Dog/Puppy implements chain plus an unrelated
+// helper symbol, spread across directories (root, util/, services/) to
+// exercise clustering and type-level hub rendering.
 func fixture() *scip.Index {
+	animalType := "go github.com/example/animal Animal."
 	animalSpeak := "go github.com/example/animal Animal#Speak()."
 	dogSpeak := "go github.com/example/animal Dog#Speak()."
 	puppySpeak := "go github.com/example/animal Puppy#Speak()."
@@ -57,7 +60,10 @@ func fixture() *scip.Index {
 		Documents: []*scip.Document{
 			{
 				RelativePath: "animal.go",
-				Occurrences:  []*scip.Occurrence{def(animalSpeak, 2)},
+				Occurrences: []*scip.Occurrence{
+					def(animalType, 1),
+					def(animalSpeak, 2),
+				},
 				Symbols: []*scip.SymbolInformation{{
 					Symbol: animalSpeak,
 					Relationships: []*scip.Relationship{{
@@ -81,14 +87,21 @@ func fixture() *scip.Index {
 				}},
 			},
 			{
-				RelativePath: "util.go",
+				RelativePath: "util/helper.go",
 				Occurrences:  []*scip.Occurrence{def(unrelated, 1)},
 			},
 			{
-				RelativePath: "zoo.go",
+				RelativePath: "services/zoo.go",
 				Occurrences: []*scip.Occurrence{
 					ref(animalSpeak, 10),
+					ref(animalSpeak, 14),
 					ref(unrelated, 12),
+				},
+			},
+			{
+				RelativePath: "services/handler.go",
+				Occurrences: []*scip.Occurrence{
+					ref(animalSpeak, 4),
 				},
 			},
 		},
