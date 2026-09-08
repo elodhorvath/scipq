@@ -1,5 +1,4 @@
 # directories
-testdata/index.scip
 dist/
 
 # built binaries — release assets only, never committed
