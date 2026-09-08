@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 
 	scip "github.com/scip-code/scip/bindings/go/scip"
 )
@@ -64,16 +65,8 @@ func (r *ReverseIndex) Implements(symbol string) []string {
 			queue = append(queue, next)
 		}
 	}
-	sortStrings(out)
+	slices.Sort(out)
 	return out
-}
-
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
 }
 
 // Load parses the SCIP index at path and builds a ReverseIndex over it.
