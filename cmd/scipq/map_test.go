@@ -254,7 +254,7 @@ func TestShortSymbol(t *testing.T) {
 		{"go github.com/example/util Unrelated#Helper().", "Helper"},
 		{"go github.com/example/animal Animal", "Animal"},
 		// Type-level symbol: empty member position after '#'.
-		{"csharp LMSExtract, Services LMSExtract.Services/Xunit/Assert#", "Assert"},
+		{"csharp example.assert, Services example.assert.Services/Xunit/Assert#", "Assert"},
 		{"go github.com/example/animal Animal#", "Animal"},
 		{"", ""},
 	}
