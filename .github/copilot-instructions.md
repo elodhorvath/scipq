@@ -6,10 +6,24 @@ scipq is a Go CLI that answers code-graph questions over any SCIP index
 (`index.scip`, protobuf format). Public, open-source (MIT). Design principles:
 deterministic, consume-any-SCIP-index, data-only output, no LLM/telemetry/network.
 
-Issue tracking: implementation work uses this repo's issue tracker. Cross-repo
-coordination (if any) is handled in the maintainer's workspace tracker; the
-two are independent. This repo is self-sufficient: nothing here references
-private infrastructure.
+## Issue tracking
+
+Implementation work is tracked **in this repo's issue tracker** (public).
+Every PR must reference its issue (e.g. `fixes #N` in the commit body) so the
+linkage is visible to anyone.
+
+Rules:
+
+- **Never reference private repositories** in issues, PRs, commits, or docs.
+  This includes repo names, project boards, issue numbers from other repos,
+  and internal tooling. Cross-references from a public repo into private
+  infrastructure leak metadata and leave dangling links for public readers.
+- Internal/coordination context lives outside this repo and stays there. If a
+  decision made elsewhere affects this repo, capture the *conclusion* in a
+  public issue here — not the private discussion that produced it.
+- Benchmark/test claims about non-public codebases must stay generic: no
+  private repo names, paths, symbols, or artifacts. Fixtures are synthetic or
+  from open-source repos only.
 
 ## Language & toolchain
 
