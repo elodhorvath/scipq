@@ -51,7 +51,22 @@ Rules:
 
 ## Repository conventions
 
-- GitFlow: `feature/` branches, `main` integration, merge commits only.
+### Branching model (GitFlow)
+
+- `develop` — integration branch (repo default). All feature PRs target
+  `develop`.
+- `main` — releases only. Receives merges **exclusively from `develop`**
+  (release PRs or hotfixes), never from feature branches. Releases are cut
+  from `main` by tagging (`git tag vX.Y.Z && git push --tags` → goreleaser).
+- Feature branches: `feature/N-slug`, branched from `develop`, PR back into
+  `develop`. Merge commits only (no squash/rebase merges).
+- After merge, delete the feature branch (locally and on origin).
+- `main` and `develop` are protected: PRs required, no force pushes, no
+  deletions (ruleset + branch protection). Only the maintainer can merge,
+  and direct pushes to either branch are maintainer-only.
+
+### General conventions
+
 - One issue = one branch = one PR. Reference the issue in the commit body.
 - Keep PRs narrow; unrelated changes get their own issue/PR.
 - README is maintained with every user-visible change (new verb, flag, or
