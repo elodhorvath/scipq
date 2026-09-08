@@ -71,6 +71,31 @@ api/handlers/profile.go:41           call (interface dispatch)
 Every command exits 0 on success, 1 on usage error, 2 on missing index.
 `--json` on any verb for machine-readable output.
 
+### `map` — repo orientation
+
+One-screen answer to "what is this codebase?": per-directory clusters with
+hub symbols ranked by reference in-degree, overall totals, and repo-wide
+hotspots. Output stays under ~800 tokens for a 300-file repo.
+
+```bash
+$ scipq map
+5 files · 4 symbols
+./  2 files · 3 symbols   hubs: Speak (3←)
+util/  1 files · 1 symbols   hubs: Helper (1←)
+services/  2 files · 0 symbols
+
+hotspots:
+services/zoo.go (3 refs)
+services/handler.go (1 refs)
+```
+
+Flags:
+
+- `--limit N` — cap the number of directory clusters shown (default 10,
+  `-1` for all). Truncation is noted in the output.
+- `--json` — machine-readable equivalent (clusters, hubs, hotspots, totals).
+- `--index <path>` — index location (default `./index.scip`).
+
 ## Verbs
 
 | Verb | Question it answers |

@@ -5,9 +5,10 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/elodhorvath/scipq/internal/index"
 )
@@ -16,6 +17,12 @@ const (
 	exitOK      = 0 // success
 	exitUsage   = 1 // bad arguments
 	exitNoIndex = 2 // index file missing/unreadable
+)
+
+// stdout and stderr are variables so tests can capture verb output.
+var (
+	stdout io.Writer = os.Stdout
+	stderr io.Writer = os.Stderr
 )
 
 func usage(w *os.File) {
@@ -43,32 +50,69 @@ func loadIndex(flagValue string) *index.ReverseIndex {
 	ri, err := index.Load(path)
 	if err != nil {
 		if errors.Is(err, index.ErrNotFound) {
-			fmt.Fprintf(os.Stderr, "scipq: no index at %s (pass --index <path> or place index.scip in the current directory)\n", path)
+			fmt.Fprintf(stderr, "scipq: no index at %s (pass --index <path> or place index.scip in the current directory)\n", path)
 			os.Exit(exitNoIndex)
 		}
-		fmt.Fprintf(os.Stderr, "scipq: %v\n", err)
+		fmt.Fprintf(stderr, "scipq: %v\n", err)
 		os.Exit(exitNoIndex)
 	}
 	return ri
 }
 
 func main() {
-	fs := flag.NewFlagSet("scipq", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	indexPath := fs.String("index", "", "path to the SCIP index (default ./index.scip)")
-
 	if len(os.Args) < 2 {
 		usage(os.Stderr)
 		os.Exit(exitUsage)
 	}
 	verb := os.Args[1]
-	// v0: verbs are stubs; the index load path is wired so the exit-code
-	// contract is testable before any verb logic lands.
-	_ = verb
-	if err := fs.Parse(os.Args[2:]); err != nil {
+	args := os.Args[2:]
+
+	// --index is a global flag; extract it manually so the verb's FlagSet
+	// only sees its own flags (a FlagSet stops at the first unknown flag,
+	// which would strand later flags in Args).
+	indexPath, rest, err := extractStringFlag(args, "index")
+	if err != nil {
+		fmt.Fprintf(stderr, "scipq: %v\n", err)
 		os.Exit(exitUsage)
 	}
-	_ = loadIndex(*indexPath)
-	fmt.Fprintln(os.Stderr, "scipq: verbs not implemented yet (see github.com/elodhorvath/scipq/issues)")
-	os.Exit(exitOK)
+	ri := loadIndex(indexPath)
+
+	switch verb {
+	case "map":
+		os.Exit(runMap(rest, ri, hasJSONFlag(rest)))
+	case "callers", "blast", "skeleton", "dead":
+		fmt.Fprintf(os.Stderr, "scipq: verb %q not implemented yet (see github.com/elodhorvath/scipq/issues)\n", verb)
+		os.Exit(exitUsage)
+	default:
+		usage(os.Stderr)
+		os.Exit(exitUsage)
+	}
+}
+
+// extractStringFlag removes "--flag value" (or "--flag=value") from args and
+// returns the flag's value plus the remaining arguments.
+func extractStringFlag(args []string, name string) (value string, rest []string, err error) {
+	prefix := "--" + name + "="
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--"+name:
+			if i+1 >= len(args) {
+				return "", nil, fmt.Errorf("flag --%s requires a value", name)
+			}
+			return args[i+1], append(args[:i:i], args[i+2:]...), nil
+		case strings.HasPrefix(args[i], prefix):
+			return strings.TrimPrefix(args[i], prefix), append(args[:i:i], args[i+1:]...), nil
+		}
+	}
+	return "", args, nil
+}
+
+// hasJSONFlag reports whether the verb args request --json output.
+func hasJSONFlag(args []string) bool {
+	for _, a := range args {
+		if a == "--json" || a == "-json" {
+			return true
+		}
+	}
+	return false
 }

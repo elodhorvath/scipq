@@ -29,9 +29,11 @@ type Site struct {
 // plus the implements/overrides relationship edges extracted from the index.
 // All lookup methods return results in deterministic (document, line) order.
 type ReverseIndex struct {
-	refs  map[string][]Site
-	defs  map[string][]Site
-	impls map[string][]string
+	refs     map[string][]Site
+	defs     map[string][]Site
+	impls    map[string][]string
+	files    map[string]struct{}
+	fileRefs map[string]int
 }
 
 // Refs returns every reference site for symbol. The result is a copy;
@@ -69,6 +71,54 @@ func (r *ReverseIndex) Implements(symbol string) []string {
 	return out
 }
 
+// Files returns every indexed file path, sorted. Files with no occurrences
+// are included.
+func (r *ReverseIndex) Files() []string {
+	out := make([]string, 0, len(r.files))
+	for f := range r.files {
+		out = append(out, f)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// DefinedSymbols returns every symbol with at least one definition site,
+// sorted.
+func (r *ReverseIndex) DefinedSymbols() []string {
+	out := make([]string, 0, len(r.defs))
+	for sym := range r.defs {
+		out = append(out, sym)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// RefCount returns the number of reference sites for symbol — its in-degree
+// in the reference graph.
+func (r *ReverseIndex) RefCount(symbol string) int {
+	return len(r.refs[symbol])
+}
+
+// FileRefCounts returns the number of reference occurrences per file. Files
+// that only contain definitions are absent from the result.
+func (r *ReverseIndex) FileRefCounts() map[string]int {
+	out := make(map[string]int, len(r.fileRefs))
+	for f, n := range r.fileRefs {
+		out[f] = n
+	}
+	return out
+}
+
+// RefsAll returns the full reference map: symbol → reference sites. The
+// returned map is a copy; mutating it does not affect the index.
+func (r *ReverseIndex) RefsAll() map[string][]Site {
+	out := make(map[string][]Site, len(r.refs))
+	for sym, sites := range r.refs {
+		out[sym] = append([]Site(nil), sites...)
+	}
+	return out
+}
+
 // Load parses the SCIP index at path and builds a ReverseIndex over it.
 // It returns an error wrapping ErrNotFound when the file does not exist.
 func Load(path string) (*ReverseIndex, error) {
@@ -85,9 +135,11 @@ func Load(path string) (*ReverseIndex, error) {
 	defer f.Close()
 
 	ri := &ReverseIndex{
-		refs:  map[string][]Site{},
-		defs:  map[string][]Site{},
-		impls: map[string][]string{},
+		refs:     map[string][]Site{},
+		defs:     map[string][]Site{},
+		impls:    map[string][]string{},
+		files:    map[string]struct{}{},
+		fileRefs: map[string]int{},
 	}
 	visitor := &scip.IndexVisitor{
 		VisitDocument: func(_ context.Context, doc *scip.Document) error {
@@ -109,6 +161,7 @@ func Load(path string) (*ReverseIndex, error) {
 // the document, and relationship edges for the symbols it defines.
 func (r *ReverseIndex) addDocument(doc *scip.Document) {
 	path := doc.GetRelativePath()
+	r.files[path] = struct{}{}
 	for _, occ := range doc.GetOccurrences() {
 		sym := occ.GetSymbol()
 		if sym == "" {
@@ -119,6 +172,7 @@ func (r *ReverseIndex) addDocument(doc *scip.Document) {
 			r.defs[sym] = append(r.defs[sym], site)
 		} else {
 			r.refs[sym] = append(r.refs[sym], site)
+			r.fileRefs[path]++
 		}
 	}
 	for _, si := range doc.GetSymbols() {
