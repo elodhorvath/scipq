@@ -71,6 +71,57 @@ api/handlers/profile.go:41           call (interface dispatch)
 Every command exits 0 on success, 1 on usage error, 2 on missing index.
 `--json` on any verb for machine-readable output.
 
+### `map` — repo orientation
+
+One-screen answer to "what is this codebase?": per-directory clusters with
+hub symbols ranked by reference in-degree, overall totals, and repo-wide
+hotspots. Output stays under ~800 tokens for a 300-file repo.
+
+```bash
+$ scipq map
+5 files · 4 symbols
+./  2 files · 3 symbols   hubs: Speak (3←)
+util/  1 files · 1 symbols   hubs: Helper (1←)
+services/  2 files · 0 symbols
+
+hotspots:
+services/zoo.go (3 refs)
+services/handler.go (1 refs)
+```
+
+Flags:
+
+- `--limit N` — cap the number of directory clusters shown (default 10,
+  `-1` for all). Truncation is noted in the output.
+- `--json` — machine-readable equivalent (clusters, hubs, hotspots, totals).
+- `--index <path>` — index location (default `./index.scip`).
+
+### `callers` — exact reference sites for a symbol
+
+Who uses this symbol, where, and via what relation. Resolve by full symbol
+string or by name suffix (`Speak`, `Animal#Speak`, `Animal#Speak()` all
+work). Direct references are labeled `call`; references to implementors are
+labeled `implements (via <symbol>)`, transitively through implements chains.
+
+```bash
+$ scipq callers Animal#Speak
+go github.com/example/animal Animal#Speak().  (4 sites)
+services/handler.go:5  call
+services/handler.go:6  implements (via Dog#Speak())
+services/zoo.go:11     call
+services/zoo.go:15     call
+```
+
+A query matching several defined symbols is ambiguous: all matches are
+listed (with defining files) on stderr and the exit code is 1. An unknown
+symbol is a usage error (exit 1). Missing index exits 2.
+
+Flags:
+
+- `--json` — machine-readable equivalent (`symbol`, `sites[]` with
+  `file`, 1-based `line`, `relation`).
+- `--index <path>` — index location (default `./index.scip`).
+
 ## Verbs
 
 | Verb | Question it answers |

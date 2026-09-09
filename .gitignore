@@ -1,10 +1,10 @@
 # directories
-testdata/index.scip
 dist/
 
 # built binaries — release assets only, never committed
-scipq
-scipq.exe
+# (anchored to repo root so the cmd/scipq/ source directory is not ignored)
+/scipq
+/scipq.exe
 *.exe
 
 # Go
