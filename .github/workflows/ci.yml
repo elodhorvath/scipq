@@ -48,3 +48,25 @@ jobs:
           code=$?
           set -e
           test "$code" -eq 2 || (echo "expected exit 2, got $code" && exit 1)
+
+      - name: Smoke — callers on committed fixture
+        run: |
+          set +e
+          ./scipq callers Animal#Speak --index testdata/index.scip > /tmp/callers.out 2>/tmp/callers.err
+          code=$?
+          set -e
+          test "$code" -eq 0 || (echo "expected exit 0, got $code" && exit 1)
+          grep -q "Animal#Speak().  (3 sites)" /tmp/callers.out || (echo "missing resolved header" && exit 1)
+          grep -q "services/zoo.go:11     call" /tmp/callers.out || (echo "missing direct call site" && exit 1)
+
+      - name: Smoke — callers unknown symbol exits 1
+        run: |
+          set +e
+          ./scipq callers NoSuchSymbol --index testdata/index.scip
+          code=$?
+          set -e
+          test "$code" -eq 1 || (echo "expected exit 1, got $code" && exit 1)
+
+      - name: Smoke — callers --json is valid JSON
+        run: |
+          ./scipq callers Helper --index testdata/index.scip --json | python3 -m json.tool > /dev/null

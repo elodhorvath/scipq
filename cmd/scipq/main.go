@@ -25,7 +25,7 @@ var (
 	stderr io.Writer = os.Stderr
 )
 
-func usage(w *os.File) {
+func usage(w io.Writer) {
 	fmt.Fprintln(w, "scipq — code-graph queries over a SCIP index")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "usage: scipq <verb> [args] [--json]")
@@ -43,49 +43,62 @@ func resolveIndexPath(flagValue string) string {
 	return "./index.scip"
 }
 
-// loadIndex resolves and loads the SCIP index, printing an error and
-// exiting with the missing-index code on failure.
-func loadIndex(flagValue string) *index.ReverseIndex {
+// loadIndex resolves and loads the SCIP index. On failure it prints the
+// diagnostic and returns the exit code the process should use (the
+// missing-index code); ri is nil then.
+func loadIndex(flagValue string) (*index.ReverseIndex, int) {
 	path := resolveIndexPath(flagValue)
 	ri, err := index.Load(path)
 	if err != nil {
 		if errors.Is(err, index.ErrNotFound) {
 			fmt.Fprintf(stderr, "scipq: no index at %s (pass --index <path> or place index.scip in the current directory)\n", path)
-			os.Exit(exitNoIndex)
+		} else {
+			fmt.Fprintf(stderr, "scipq: %v\n", err)
 		}
-		fmt.Fprintf(stderr, "scipq: %v\n", err)
-		os.Exit(exitNoIndex)
+		return nil, exitNoIndex
 	}
-	return ri
+	return ri, exitOK
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		usage(os.Stderr)
-		os.Exit(exitUsage)
-	}
-	verb := os.Args[1]
-	args := os.Args[2:]
+	os.Exit(run(os.Args[1:]))
+}
 
-	// --index is a global flag; extract it manually so the verb's FlagSet
-	// only sees its own flags (a FlagSet stops at the first unknown flag,
-	// which would strand later flags in Args).
-	indexPath, rest, err := extractStringFlag(args, "index")
+// run dispatches a scipq invocation (everything after the program name) and
+// returns the process exit code. It is the testable seam for main.
+func run(argv []string) int {
+	// --index is a global flag: it may appear before or after the verb, so
+	// it is extracted from the whole invocation. Extraction is manual
+	// because a FlagSet stops at the first unknown flag, which would
+	// strand later flags in Args.
+	indexPath, rest, err := extractStringFlag(argv, "index")
 	if err != nil {
 		fmt.Fprintf(stderr, "scipq: %v\n", err)
-		os.Exit(exitUsage)
+		return exitUsage
 	}
-	ri := loadIndex(indexPath)
+	if len(rest) == 0 {
+		usage(stderr)
+		return exitUsage
+	}
+	verb := rest[0]
+	args := rest[1:]
+
+	ri, code := loadIndex(indexPath)
+	if code != exitOK {
+		return code
+	}
 
 	switch verb {
 	case "map":
-		os.Exit(runMap(rest, ri, hasJSONFlag(rest)))
-	case "callers", "blast", "skeleton", "dead":
-		fmt.Fprintf(os.Stderr, "scipq: verb %q not implemented yet (see github.com/elodhorvath/scipq/issues)\n", verb)
-		os.Exit(exitUsage)
+		return runMap(args, ri, hasJSONFlag(args))
+	case "callers":
+		return runCallers(args, ri, hasJSONFlag(args))
+	case "blast", "skeleton", "dead":
+		fmt.Fprintf(stderr, "scipq: verb %q not implemented yet (see github.com/elodhorvath/scipq/issues)\n", verb)
+		return exitUsage
 	default:
-		usage(os.Stderr)
-		os.Exit(exitUsage)
+		usage(stderr)
+		return exitUsage
 	}
 }
 

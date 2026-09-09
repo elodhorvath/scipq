@@ -70,13 +70,6 @@ func fixtureIndex() *scip.Index {
 					def(animalType, 1),
 					def(animalSpeak, 2),
 				},
-				Symbols: []*scip.SymbolInformation{{
-					Symbol: animalSpeak,
-					Relationships: []*scip.Relationship{{
-						Symbol:           dogSpeak,
-						IsImplementation: true,
-					}},
-				}},
 			},
 			{
 				RelativePath: "dog.go",
@@ -84,13 +77,24 @@ func fixtureIndex() *scip.Index {
 					def(dogSpeak, 3),
 					def(puppySpeak, 9),
 				},
-				Symbols: []*scip.SymbolInformation{{
-					Symbol: dogSpeak,
-					Relationships: []*scip.Relationship{{
-						Symbol:           puppySpeak,
-						IsImplementation: true,
-					}},
-				}},
+				// Implements edges are declared on the implementing symbol
+				// and point at the symbol it implements (SCIP spec).
+				Symbols: []*scip.SymbolInformation{
+					{
+						Symbol: dogSpeak,
+						Relationships: []*scip.Relationship{{
+							Symbol:           animalSpeak,
+							IsImplementation: true,
+						}},
+					},
+					{
+						Symbol: puppySpeak,
+						Relationships: []*scip.Relationship{{
+							Symbol:           dogSpeak,
+							IsImplementation: true,
+						}},
+					},
+				},
 			},
 			{
 				RelativePath: "util/helper.go",

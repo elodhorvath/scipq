@@ -114,8 +114,8 @@ func TestComputeMapHotspots(t *testing.T) {
 	res := computeMap(ri, -1)
 
 	want := []Hotspot{
-		{File: "services/zoo.go", Refs: 3},
-		{File: "services/handler.go", Refs: 1},
+		{"services/zoo.go", 3},
+		{"services/handler.go", 1},
 	}
 	if len(res.Hotspots) != len(want) {
 		t.Fatalf("got %d hotspots, want %d", len(res.Hotspots), len(want))
@@ -243,6 +243,55 @@ func TestRunMapPositionalArgs(t *testing.T) {
 	if errb.Len() == 0 {
 		t.Error("expected diagnostic on stderr")
 	}
+}
+
+func TestRunGlobalIndexFlag(t *testing.T) {
+	// --index is a global flag: it must work before the verb as well as
+	// after. Regression: extraction used to scan only the args after the
+	// verb, so "scipq --index foo.scip map" silently fell back to
+	// ./index.scip and exited 2.
+	tests := []struct {
+		name string
+		argv []string
+	}{
+		{"before verb", []string{"--index", "../../testdata/index.scip", "map"}},
+		{"after verb", []string{"map", "--index", "../../testdata/index.scip"}},
+		{"equals form before verb", []string{"--index=../../testdata/index.scip", "map"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, errb := captureWriter(t)
+			code := run(tt.argv)
+			if code != exitOK {
+				t.Errorf("exit = %d, want %d (stderr: %q)", code, exitOK, errb.String())
+			}
+			if !contains(out.String(), "5 files · 5 symbols") {
+				t.Errorf("output missing totals line:\n%s", out.String())
+			}
+		})
+	}
+
+	t.Run("missing index before verb exits 2", func(t *testing.T) {
+		_, errb := captureWriter(t)
+		code := run([]string{"--index", "/nonexistent/index.scip", "map"})
+		if code != exitNoIndex {
+			t.Errorf("exit = %d, want %d", code, exitNoIndex)
+		}
+		if errb.Len() == 0 {
+			t.Error("expected diagnostic on stderr")
+		}
+	})
+
+	t.Run("no verb is usage error", func(t *testing.T) {
+		_, errb := captureWriter(t)
+		code := run([]string{"--index", "../../testdata/index.scip"})
+		if code != exitUsage {
+			t.Errorf("exit = %d, want %d", code, exitUsage)
+		}
+		if errb.Len() == 0 {
+			t.Error("expected usage on stderr")
+		}
+	})
 }
 
 func TestShortSymbol(t *testing.T) {
