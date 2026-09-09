@@ -27,7 +27,7 @@ layer over it. `scipq` fills that gap.
 
 ```bash
 # Go 1.22+
-go install github.com/elodhorvath/scipq@latest
+go install github.com/elodhorvath/scipq/cmd/scipq@latest
 ```
 
 Prebuilt binaries (macOS arm64/amd64, Linux amd64/arm64, Windows amd64) from
