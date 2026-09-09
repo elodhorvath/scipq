@@ -33,7 +33,9 @@ func main() {
 // fixture builds the same synthetic index shape as the unit-test fixture:
 // an Animal type + Animal/Dog/Puppy implements chain plus an unrelated
 // helper symbol, spread across directories (root, util/, services/) to
-// exercise clustering and type-level hub rendering.
+// exercise clustering, type-level hub rendering, and transitive callers.
+// Implements edges are declared on the implementing symbol per the SCIP
+// spec.
 func fixture() *scip.Index {
 	animalType := "go github.com/example/animal Animal."
 	animalSpeak := "go github.com/example/animal Animal#Speak()."
@@ -64,13 +66,6 @@ func fixture() *scip.Index {
 					def(animalType, 1),
 					def(animalSpeak, 2),
 				},
-				Symbols: []*scip.SymbolInformation{{
-					Symbol: animalSpeak,
-					Relationships: []*scip.Relationship{{
-						Symbol:           dogSpeak,
-						IsImplementation: true,
-					}},
-				}},
 			},
 			{
 				RelativePath: "dog.go",
@@ -78,13 +73,24 @@ func fixture() *scip.Index {
 					def(dogSpeak, 3),
 					def(puppySpeak, 9),
 				},
-				Symbols: []*scip.SymbolInformation{{
-					Symbol: dogSpeak,
-					Relationships: []*scip.Relationship{{
-						Symbol:           puppySpeak,
-						IsImplementation: true,
-					}},
-				}},
+				// Implements edges are declared on the implementing symbol
+				// and point at the symbol it implements (SCIP spec).
+				Symbols: []*scip.SymbolInformation{
+					{
+						Symbol: dogSpeak,
+						Relationships: []*scip.Relationship{{
+							Symbol:           animalSpeak,
+							IsImplementation: true,
+						}},
+					},
+					{
+						Symbol: puppySpeak,
+						Relationships: []*scip.Relationship{{
+							Symbol:           dogSpeak,
+							IsImplementation: true,
+						}},
+					},
+				},
 			},
 			{
 				RelativePath: "util/helper.go",

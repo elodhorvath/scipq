@@ -29,9 +29,14 @@ type Site struct {
 // plus the implements/overrides relationship edges extracted from the index.
 // All lookup methods return results in deterministic (document, line) order.
 type ReverseIndex struct {
-	refs     map[string][]Site
-	defs     map[string][]Site
+	refs map[string][]Site
+	defs map[string][]Site
+	// impls holds implements edges as declared in the index: keyed by the
+	// implementing symbol, values are the symbols it implements. implsOf is
+	// the inverse: keyed by the implemented symbol, values are its
+	// implementors.
 	impls    map[string][]string
+	implsOf  map[string][]string
 	files    map[string]struct{}
 	fileRefs map[string]int
 }
@@ -48,9 +53,12 @@ func (r *ReverseIndex) Defs(symbol string) []Site {
 	return append([]Site(nil), r.defs[symbol]...)
 }
 
-// Implements returns every symbol that symbol implements or overrides,
-// transitively through implements chains. The starting symbol itself is
-// never included. Results are sorted for determinism.
+// Implements returns every symbol that implements or overrides symbol,
+// transitively through implements chains ("find implementations"). Per the
+// SCIP spec an implements relationship is declared on the implementing
+// symbol and points at the symbol it implements, so the traversal follows
+// the inverse of the declared edges. The starting symbol itself is never
+// included. Results are sorted for determinism.
 func (r *ReverseIndex) Implements(symbol string) []string {
 	seen := map[string]bool{symbol: true}
 	var out []string
@@ -58,7 +66,7 @@ func (r *ReverseIndex) Implements(symbol string) []string {
 	for len(queue) > 0 {
 		cur := queue[0]
 		queue = queue[1:]
-		for _, next := range r.impls[cur] {
+		for _, next := range r.implsOf[cur] {
 			if seen[next] {
 				continue
 			}
@@ -138,6 +146,7 @@ func Load(path string) (*ReverseIndex, error) {
 		refs:     map[string][]Site{},
 		defs:     map[string][]Site{},
 		impls:    map[string][]string{},
+		implsOf:  map[string][]string{},
 		files:    map[string]struct{}{},
 		fileRefs: map[string]int{},
 	}
@@ -180,7 +189,9 @@ func (r *ReverseIndex) addDocument(doc *scip.Document) {
 	}
 }
 
-// addRelationships records implements/overrides edges declared by si.
+// addRelationships records implements/overrides edges declared by si. Per
+// the SCIP spec the relationship is declared on the implementing symbol and
+// points at the symbol it implements; both directions are indexed.
 func (r *ReverseIndex) addRelationships(si *scip.SymbolInformation) {
 	sym := si.GetSymbol()
 	if sym == "" {
@@ -189,6 +200,7 @@ func (r *ReverseIndex) addRelationships(si *scip.SymbolInformation) {
 	for _, rel := range si.GetRelationships() {
 		if rel.GetIsImplementation() && rel.GetSymbol() != "" {
 			r.impls[sym] = append(r.impls[sym], rel.GetSymbol())
+			r.implsOf[rel.GetSymbol()] = append(r.implsOf[rel.GetSymbol()], sym)
 		}
 	}
 }
