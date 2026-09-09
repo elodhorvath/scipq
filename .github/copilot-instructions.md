@@ -25,6 +25,33 @@ Rules:
   private repo names, paths, symbols, or artifacts. Fixtures are synthetic or
   from open-source repos only.
 
+## Workflow when working an issue
+
+When the user says "work on issue N" (or similar):
+
+1. **Read the issue first**: `gh issue view N` — treat its title, body, and
+   comments as the requirements. Do not ask the user to restate them.
+2. **Plan before coding** if the issue is large: outline the files you'll
+   touch and get user confirmation before writing code.
+3. **Branch**: `feature/N-slug` from `develop` (never from `main`).
+4. **Interactive review preferred**: when working with the user, write code
+   and pause for review *before committing* — avoid commit thrashing on
+   revisions. Settle changes with the user, then make one clean commit.
+5. **Before opening a PR**: `gofmt`, `go vet ./...`, `go test ./...` must all
+   pass. Do not push failing code.
+6. **PR**: from `feature/N-slug` into `develop`, body includes `fixes #N`.
+   Keep the PR to one issue's scope.
+7. **Never merge your own PR.** Open it and stop — the maintainer reviews and
+   merges. Do not click merge, even if checks pass.
+   - **Review findings are fixed pre-merge, not deferred.** If a reviewer
+     notes a concrete issue (correctness, style, a stdlib replacement for
+     hand-rolled code), apply it to the PR branch and push — do not park it
+     in a "later" pile. Deferred findings are a tax on every future reader.
+8. **If the issue spans multiple PRs**: note it in the issue, keep each PR
+   narrow and self-contained, reference the issue in every PR.
+9. **Commit author**: use the user's existing git config; never invent an
+   author identity.
+
 ## Language & toolchain
 
 - Go 1.22+ (matching `go.mod`), standard library first.
@@ -51,7 +78,22 @@ Rules:
 
 ## Repository conventions
 
-- GitFlow: `feature/` branches, `main` integration, merge commits only.
+### Branching model (GitFlow)
+
+- `develop` — integration branch (repo default). All feature PRs target
+  `develop`.
+- `main` — releases only. Receives merges **exclusively from `develop`**
+  (release PRs or hotfixes), never from feature branches. Releases are cut
+  from `main` by tagging (`git tag vX.Y.Z && git push --tags` → goreleaser).
+- Feature branches: `feature/N-slug`, branched from `develop`, PR back into
+  `develop`. Merge commits only (no squash/rebase merges).
+- After merge, delete the feature branch (locally and on origin).
+- `main` and `develop` are protected: PRs required, no force pushes, no
+  deletions (ruleset + branch protection). Only the maintainer can merge,
+  and direct pushes to either branch are maintainer-only.
+
+### General conventions
+
 - One issue = one branch = one PR. Reference the issue in the commit body.
 - Keep PRs narrow; unrelated changes get their own issue/PR.
 - README is maintained with every user-visible change (new verb, flag, or
