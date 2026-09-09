@@ -82,9 +82,17 @@ When the user says "work on issue N" (or similar):
 
 - `develop` — integration branch (repo default). All feature PRs target
   `develop`.
-- `main` — releases only. Receives merges **exclusively from `develop`**
-  (release PRs or hotfixes), never from feature branches. Releases are cut
-  from `main` by tagging (`git tag vX.Y.Z && git push --tags` → goreleaser).
+- `main` — releases only. Receives merges **exclusively from release
+  branches** (`release/vX.Y.Z`) and hotfix branches, never from feature
+  branches. Releases are cut from `main` by tagging
+  (`git tag vX.Y.Z && git push --tags` → goreleaser).
+- Release branches are **ephemeral**: they carry the release PR and
+  release-only artifacts (curated notes), and are deleted after merge.
+  **Post-release back-merge is mandatory**: after the tag is verified, merge
+  `main` → `develop` via a small sync PR — skipping it let `release.yml`
+  drift after v0.1.0.
+- Full release process (notes modes, header boilerplate rule, checklist):
+  `docs/release.md`.
 - Feature branches: `feature/N-slug`, branched from `develop`, PR back into
   `develop`. Merge commits only (no squash/rebase merges).
 - After merge, delete the feature branch (locally and on origin).
