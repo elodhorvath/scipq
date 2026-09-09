@@ -29,7 +29,7 @@ Single static binary — no runtime dependencies.
 ## Install
 
 ```bash
-go install github.com/elodhorvath/scipq@v0.1.0
+go install github.com/elodhorvath/scipq/cmd/scipq@v0.1.0
 ```
 
 Or grab a prebuilt binary from the assets below
