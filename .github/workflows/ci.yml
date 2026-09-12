@@ -44,10 +44,18 @@ jobs:
       - name: Smoke — missing index exits 2
         run: |
           set +e
-          ./scipq map /nonexistent
+          ./scipq map --index /nonexistent/index.scip
           code=$?
           set -e
           test "$code" -eq 2 || (echo "expected exit 2, got $code" && exit 1)
+
+      - name: Smoke — arg violations precede missing index (exit 1)
+        run: |
+          set +e
+          ./scipq map extra --index testdata/index.scip
+          code=$?
+          set -e
+          test "$code" -eq 1 || (echo "expected exit 1, got $code" && exit 1)
 
       - name: Smoke — callers on committed fixture
         run: |

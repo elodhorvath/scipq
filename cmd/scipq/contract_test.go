@@ -45,6 +45,16 @@ func TestExitCodeContract(t *testing.T) {
 		{"stub verb skeleton", []string{"skeleton"}, exitUsage},
 		{"stub verb dead", []string{"dead"}, exitUsage},
 
+		// Precedence: usage errors beat missing index. The loader is
+		// stubbed to the missing-index code for these, so a 1 result
+		// proves arg validation ran first. (On develop the index loaded
+		// before verb dispatch, so these combinations exited 2; the port
+		// deliberately moved loading into verb actions after validation.
+		// Pinned here so the precedence cannot drift silently again.)
+		{"map positional arg + missing index", []string{"map", "extra"}, exitUsage},
+		{"callers two args + missing index", []string{"callers", "a", "b"}, exitUsage},
+		{"callers no args + missing index", []string{"callers"}, exitUsage},
+
 		// Missing index: 2 (loader stubbed to the missing-index code).
 		{"map missing index", []string{"map"}, exitNoIndex},
 		{"callers missing index", []string{"callers", "Animal#Speak"}, exitNoIndex},
