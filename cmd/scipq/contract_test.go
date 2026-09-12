@@ -45,16 +45,6 @@ func TestExitCodeContract(t *testing.T) {
 		{"stub verb skeleton", []string{"skeleton"}, exitUsage},
 		{"stub verb dead", []string{"dead"}, exitUsage},
 
-		// Precedence: usage errors beat missing index. The loader is
-		// stubbed to the missing-index code for these, so a 1 result
-		// proves arg validation ran first. (On develop the index loaded
-		// before verb dispatch, so these combinations exited 2; the port
-		// deliberately moved loading into verb actions after validation.
-		// Pinned here so the precedence cannot drift silently again.)
-		{"map positional arg + missing index", []string{"map", "extra"}, exitUsage},
-		{"callers two args + missing index", []string{"callers", "a", "b"}, exitUsage},
-		{"callers no args + missing index", []string{"callers"}, exitUsage},
-
 		// Missing index: 2 (loader stubbed to the missing-index code).
 		{"map missing index", []string{"map"}, exitNoIndex},
 		{"callers missing index", []string{"callers", "Animal#Speak"}, exitNoIndex},
@@ -73,6 +63,34 @@ func TestExitCodeContract(t *testing.T) {
 			code := runError(err)
 			if code != tt.want {
 				t.Errorf("exit = %d, want %d (stderr: %q)", code, tt.want, errb.String())
+			}
+		})
+	}
+}
+
+// TestUsagePrecedesMissingIndex pins the exit-code precedence: when both
+// an argument violation and a missing index are present, the usage error
+// wins (exit 1). The loader is unconditionally missing-index, so a
+// load-first regression in a verb action would return 2 and fail here.
+// (On develop the index loaded before verb dispatch, so these
+// combinations exited 2; the port deliberately moved loading into verb
+// actions after validation.)
+func TestUsagePrecedesMissingIndex(t *testing.T) {
+	loader := func(string) (*index.ReverseIndex, int) { return nil, exitNoIndex }
+	for _, tt := range []struct {
+		name string
+		argv []string
+	}{
+		{"map positional arg", []string{"map", "extra"}},
+		{"callers two args", []string{"callers", "a", "b"}},
+		{"callers no args", []string{"callers"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errb := captureWriter(t)
+			cmd := newRootCommand(loader)
+			err := cmd.Run(context.Background(), append([]string{"scipq"}, tt.argv...))
+			if code := runError(err); code != exitUsage {
+				t.Errorf("exit = %d, want %d (loader always missing; stderr: %q)", code, exitUsage, errb.String())
 			}
 		})
 	}

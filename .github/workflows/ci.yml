@@ -52,7 +52,7 @@ jobs:
       - name: Smoke — arg violations precede missing index (exit 1)
         run: |
           set +e
-          ./scipq map extra --index testdata/index.scip
+          ./scipq map extra --index /nonexistent/index.scip
           code=$?
           set -e
           test "$code" -eq 1 || (echo "expected exit 1, got $code" && exit 1)
