@@ -73,6 +73,25 @@ Exit 2 applies to otherwise well-formed invocations — argument and flag
 errors are reported first (exit 1).
 `--json` on any verb for machine-readable output.
 
+### Global flags
+
+`--index <path>` and `--json` are persistent root flags: they parse in
+any position, before or after the verb (`scipq --index x map` and
+`scipq map --index x` are equivalent). Every verb also supports `-h`
+for per-verb help (`scipq map -h`).
+
+### Shell completions
+
+```bash
+# bash
+source <(scipq completion bash)
+# zsh / fish / powershell
+scipq completion zsh   # (also: fish, powershell)
+```
+
+`blast`, `skeleton`, and `dead` are not implemented yet — they are
+hidden from help and completion until they land.
+
 ### `map` — repo orientation
 
 One-screen answer to "what is this codebase?": per-directory clusters with

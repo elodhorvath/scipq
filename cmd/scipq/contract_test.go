@@ -107,3 +107,50 @@ func TestStubVerbDiagnostic(t *testing.T) {
 		t.Errorf("stderr missing stub diagnostic:\n%s", errb.String())
 	}
 }
+
+func TestStubVerbsHiddenFromHelp(t *testing.T) {
+	// Stubs stay invocable but must not read as real verbs in help or
+	// completion output.
+	_, errb := captureWriter(t)
+	ri := loadFixtureIndex(t)
+	code := runWith(t, []string{}, ri)
+	if code != exitUsage {
+		t.Fatalf("bare invocation exit = %d, want %d", code, exitUsage)
+	}
+	usage := errb.String()
+	for _, stub := range []string{"blast", "skeleton", "dead"} {
+		if contains(usage, stub) {
+			t.Errorf("usage output lists stub verb %q:\n%s", stub, usage)
+		}
+	}
+	for _, live := range []string{"map", "callers"} {
+		if !contains(usage, live) {
+			t.Errorf("usage output missing live verb %q:\n%s", live, usage)
+		}
+	}
+}
+
+func TestShellCompletion(t *testing.T) {
+	ri := loadFixtureIndex(t)
+
+	t.Run("completion subcommand emits bash script", func(t *testing.T) {
+		out, errb := captureWriter(t)
+		code := runWith(t, []string{"completion", "bash"}, ri)
+		if code != exitOK {
+			t.Fatalf("completion bash exit = %d, want %d (stderr: %q)", code, exitOK, errb.String())
+		}
+		if !contains(out.String(), "shell completion script") {
+			t.Errorf("completion bash output is not a completion script:\n%s", out.String())
+		}
+	})
+
+	// Note: the --generate-shell-completion flag path is not asserted
+	// here because urfave/cli's DefaultCompleteWithFlags reads the
+	// process-global os.Args (not the argv passed to Run) when completing
+	// the root command, so its output is not deterministic under `go
+	// test`. The completion subcommand path above covers script
+	// generation; flag suggestions are exercised by real shells.
+	// Hidden stubs are excluded from completion by the framework
+	// (printCommandSuggestions skips Hidden commands) — pinned via
+	// TestStubVerbsHiddenFromHelp for the usage path.
+}

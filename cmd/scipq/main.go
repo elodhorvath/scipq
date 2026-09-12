@@ -126,13 +126,14 @@ func noVerbAction(_ context.Context, cmd *cli.Command) error {
 
 // usage writes the verb list to w. The framework renders per-verb help
 // (scipq <verb> -h); this covers the bare-invocation and unknown-verb
-// cases.
+// cases. Only live verbs are listed — stubs are hidden from help and
+// completion until implemented.
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "scipq — code-graph queries over a SCIP index")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "usage: scipq <verb> [args] [--json]")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "verbs: map, callers, blast, skeleton, dead")
+	fmt.Fprintln(w, "verbs: map, callers")
 	fmt.Fprintln(w, "run 'scipq <verb> -h' for verb help")
 }
 
@@ -165,26 +166,35 @@ func newRootCommand(load indexLoader) *cli.Command {
 		Commands: []*cli.Command{
 			mapCommand(load),
 			callersCommand(load),
+			// Stubs stay invocable (existing diagnostics + exit 1) but are
+			// hidden from help and completion so they don't read as real
+			// verbs.
 			{
 				Name:   "blast",
 				Usage:  "not implemented yet",
+				Hidden: true,
 				Action: stubAction("blast"),
 			},
 			{
 				Name:   "skeleton",
 				Usage:  "not implemented yet",
+				Hidden: true,
 				Action: stubAction("skeleton"),
 			},
 			{
 				Name:   "dead",
 				Usage:  "not implemented yet",
+				Hidden: true,
 				Action: stubAction("dead"),
 			},
 		},
 		// Keep the verb list clean: no built-in "help" subcommand.
 		HideHelpCommand: true,
-		Writer:          stdout,
-		ErrWriter:       stderr,
+		// Shell completion support: scipq completion bash|zsh|fish|powershell
+		// emits the completion script for each shell.
+		EnableShellCompletion: true,
+		Writer:                stdout,
+		ErrWriter:             stderr,
 		// Route framework usage errors through our diagnostic prefix and
 		// exit code instead of the default "Incorrect Usage" banner.
 		OnUsageError: usageError,
