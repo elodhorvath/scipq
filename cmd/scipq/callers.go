@@ -5,14 +5,15 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
-	"io"
 	"slices"
 	"strings"
 
 	"github.com/elodhorvath/scipq/internal/index"
+
+	"github.com/urfave/cli/v3"
 )
 
 // relation labels used in output and JSON.
@@ -168,58 +169,57 @@ func renderCallersHuman(w *writer, res CallersResult) {
 	}
 }
 
-// runCallers executes the callers verb. jsonOut is pre-detected by the
-// caller (hasJSONFlag); the --json flag itself is stripped from args before
-// the verb's FlagSet parses, since it is not a verb-level flag.
-func runCallers(args []string, ri *index.ReverseIndex, jsonOut bool) int {
-	verbArgs := make([]string, 0, len(args))
-	for _, a := range args {
-		if a == "--json" || a == "-json" {
-			continue
-		}
-		verbArgs = append(verbArgs, a)
-	}
-	mfs := flag.NewFlagSet("callers", flag.ContinueOnError)
-	mfs.SetOutput(io.Discard)
-	if err := mfs.Parse(verbArgs); err != nil {
-		fmt.Fprintf(stderr, "scipq: callers: %v\n", err)
-		return exitUsage
-	}
-	if mfs.NArg() != 1 {
-		fmt.Fprintf(stderr, "scipq: callers takes exactly one symbol argument (got %d)\n", mfs.NArg())
-		return exitUsage
-	}
-	query := mfs.Arg(0)
-	if query == "" {
-		fmt.Fprintln(stderr, "scipq: callers: symbol argument must not be empty")
-		return exitUsage
-	}
+// callersCommand builds the callers verb. The symbol argument is a
+// required positional; --index and --json arrive as persistent root flags
+// read via lineage lookup.
+func callersCommand(load indexLoader) *cli.Command {
+	return &cli.Command{
+		Name:         "callers",
+		Usage:        "exact reference sites for a symbol",
+		ArgsUsage:    "SYMBOL",
+		OnUsageError: usageError,
+		Action: func(_ context.Context, cmd *cli.Command) error {
+			if cmd.NArg() != 1 {
+				fmt.Fprintf(stderr, "scipq: callers takes exactly one symbol argument (got %d)\n", cmd.NArg())
+				return &exitError{code: exitUsage}
+			}
+			query := cmd.Args().First()
+			if query == "" {
+				fmt.Fprintln(stderr, "scipq: callers: symbol argument must not be empty")
+				return &exitError{code: exitUsage}
+			}
+			ri, code := load(cmd.String("index"))
+			if code != exitOK {
+				return &exitError{code: code}
+			}
 
-	resolved, matches := resolveSymbol(ri, query)
-	if resolved == "" {
-		if len(matches) == 0 {
-			fmt.Fprintf(stderr, "scipq: no symbol matching %q\n", query)
-			return exitUsage
-		}
-		fmt.Fprintf(stderr, "scipq: %q is ambiguous; %d matching symbols:\n", query, len(matches))
-		for _, m := range matches {
-			fmt.Fprintf(stderr, "  %s  (defined in %s)\n", m.Symbol, m.DefinedIn)
-		}
-		return exitUsage
-	}
+			resolved, matches := resolveSymbol(ri, query)
+			if resolved == "" {
+				if len(matches) == 0 {
+					fmt.Fprintf(stderr, "scipq: no symbol matching %q\n", query)
+					return &exitError{code: exitUsage}
+				}
+				fmt.Fprintf(stderr, "scipq: %q is ambiguous; %d matching symbols:\n", query, len(matches))
+				for _, m := range matches {
+					fmt.Fprintf(stderr, "  %s  (defined in %s)\n", m.Symbol, m.DefinedIn)
+				}
+				return &exitError{code: exitUsage}
+			}
 
-	res := computeCallers(ri, resolved)
+			res := computeCallers(ri, resolved)
 
-	w := newWriter(jsonOut)
-	if jsonOut {
-		enc := json.NewEncoder(w.out)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(res); err != nil {
-			fmt.Fprintf(w.err, "scipq: encode json: %v\n", err)
-			return exitUsage
-		}
-	} else {
-		renderCallersHuman(w, res)
+			w := newWriter(cmd.Bool("json"))
+			if cmd.Bool("json") {
+				enc := json.NewEncoder(w.out)
+				enc.SetIndent("", "  ")
+				if err := enc.Encode(res); err != nil {
+					fmt.Fprintf(w.err, "scipq: encode json: %v\n", err)
+					return &exitError{code: exitUsage}
+				}
+			} else {
+				renderCallersHuman(w, res)
+			}
+			return nil
+		},
 	}
-	return exitOK
 }

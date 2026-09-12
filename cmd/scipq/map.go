@@ -6,15 +6,16 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
-	"io"
 	"path"
 	"slices"
 	"strings"
 
 	"github.com/elodhorvath/scipq/internal/index"
+
+	"github.com/urfave/cli/v3"
 )
 
 const (
@@ -230,41 +231,44 @@ func renderMapHuman(w *writer, res MapResult) {
 	}
 }
 
-// runMap executes the map verb. jsonOut is pre-detected by the caller
-// (hasJSONFlag); the --json flag itself is stripped from args before the
-// verb's FlagSet parses, since it is not a verb-level flag.
-func runMap(args []string, ri *index.ReverseIndex, jsonOut bool) int {
-	verbArgs := make([]string, 0, len(args))
-	for _, a := range args {
-		if a == "--json" || a == "-json" {
-			continue
-		}
-		verbArgs = append(verbArgs, a)
-	}
-	mfs := flag.NewFlagSet("map", flag.ContinueOnError)
-	mfs.SetOutput(io.Discard)
-	limit := mfs.Int("limit", defaultClusterLimit, "max directory clusters shown (-1 for all)")
-	if err := mfs.Parse(verbArgs); err != nil {
-		fmt.Fprintf(stderr, "scipq: map: %v\n", err)
-		return exitUsage
-	}
-	if mfs.NArg() > 0 {
-		fmt.Fprintf(stderr, "scipq: map takes no positional arguments (got %q)\n", mfs.Args())
-		return exitUsage
-	}
+// mapCommand builds the map verb. The --limit flag is verb-local; --index
+// and --json arrive as persistent root flags read via lineage lookup.
+func mapCommand(load indexLoader) *cli.Command {
+	return &cli.Command{
+		Name:  "map",
+		Usage: "per-directory clusters, hub symbols, and repo-wide hotspots",
+		Flags: []cli.Flag{
+			&cli.IntFlag{
+				Name:  "limit",
+				Usage: "max directory clusters shown (-1 for all)",
+				Value: defaultClusterLimit,
+			},
+		},
+		OnUsageError: usageError,
+		Action: func(_ context.Context, cmd *cli.Command) error {
+			if cmd.NArg() > 0 {
+				fmt.Fprintf(stderr, "scipq: map takes no positional arguments (got %q)\n", cmd.Args().Slice())
+				return &exitError{code: exitUsage}
+			}
+			ri, code := load(cmd.String("index"))
+			if code != exitOK {
+				return &exitError{code: code}
+			}
 
-	res := computeMap(ri, *limit)
+			res := computeMap(ri, cmd.Int("limit"))
 
-	w := newWriter(jsonOut)
-	if jsonOut {
-		enc := json.NewEncoder(w.out)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(res); err != nil {
-			fmt.Fprintf(w.err, "scipq: encode json: %v\n", err)
-			return exitUsage
-		}
-	} else {
-		renderMapHuman(w, res)
+			w := newWriter(cmd.Bool("json"))
+			if cmd.Bool("json") {
+				enc := json.NewEncoder(w.out)
+				enc.SetIndent("", "  ")
+				if err := enc.Encode(res); err != nil {
+					fmt.Fprintf(w.err, "scipq: encode json: %v\n", err)
+					return &exitError{code: exitUsage}
+				}
+			} else {
+				renderMapHuman(w, res)
+			}
+			return nil
+		},
 	}
-	return exitOK
 }

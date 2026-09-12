@@ -5,7 +5,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/elodhorvath/scipq/internal/index"
@@ -19,6 +21,25 @@ func loadFixtureIndex(t *testing.T) *index.ReverseIndex {
 		t.Fatalf("load fixture: %v", err)
 	}
 	return ri
+}
+
+// runWith runs a full scipq invocation against a stub index loader that
+// returns ri regardless of the --index value. It is the entry-point seam
+// for verb tests: the same path main() takes, with index loading stubbed.
+func runWith(t *testing.T, argv []string, ri *index.ReverseIndex) int {
+	t.Helper()
+	cmd := newRootCommand(func(string) (*index.ReverseIndex, int) {
+		return ri, exitOK
+	})
+	err := cmd.Run(context.Background(), append([]string{"scipq"}, argv...))
+	if err == nil {
+		return exitOK
+	}
+	var ee *exitError
+	if errors.As(err, &ee) {
+		return ee.code
+	}
+	return exitUsage
 }
 
 // captureWriter redirects the process writers to buffers for the duration
@@ -131,9 +152,9 @@ func TestRunMapHuman(t *testing.T) {
 	ri := loadFixtureIndex(t)
 	out, errb := captureWriter(t)
 
-	code := runMap([]string{}, ri, false)
+	code := runWith(t, []string{"map"}, ri)
 	if code != exitOK {
-		t.Fatalf("runMap exit = %d, want %d", code, exitOK)
+		t.Fatalf("map exit = %d, want %d", code, exitOK)
 	}
 	if errb.Len() != 0 {
 		t.Errorf("stderr not empty: %q", errb.String())
@@ -162,9 +183,9 @@ func TestRunMapJSON(t *testing.T) {
 	ri := loadFixtureIndex(t)
 	out, errb := captureWriter(t)
 
-	code := runMap([]string{"--json"}, ri, true)
+	code := runWith(t, []string{"map", "--json"}, ri)
 	if code != exitOK {
-		t.Fatalf("runMap exit = %d, want %d", code, exitOK)
+		t.Fatalf("map exit = %d, want %d", code, exitOK)
 	}
 	if errb.Len() != 0 {
 		t.Errorf("stderr not empty: %q", errb.Len())
@@ -189,7 +210,7 @@ func TestRunMapLimit(t *testing.T) {
 
 	t.Run("limit 1 truncates", func(t *testing.T) {
 		out, _ := captureWriter(t)
-		code := runMap([]string{"--limit", "1"}, ri, false)
+		code := runWith(t, []string{"map", "--limit", "1"}, ri)
 		if code != exitOK {
 			t.Fatalf("exit = %d, want %d", code, exitOK)
 		}
@@ -206,7 +227,7 @@ func TestRunMapLimit(t *testing.T) {
 
 	t.Run("limit -1 shows all", func(t *testing.T) {
 		out, _ := captureWriter(t)
-		code := runMap([]string{"--limit", "-1"}, ri, false)
+		code := runWith(t, []string{"map", "--limit", "-1"}, ri)
 		if code != exitOK {
 			t.Fatalf("exit = %d, want %d", code, exitOK)
 		}
@@ -222,7 +243,7 @@ func TestRunMapLimit(t *testing.T) {
 
 	t.Run("bad limit is usage error", func(t *testing.T) {
 		_, errb := captureWriter(t)
-		code := runMap([]string{"--limit", "abc"}, ri, false)
+		code := runWith(t, []string{"map", "--limit", "abc"}, ri)
 		if code != exitUsage {
 			t.Errorf("exit = %d, want %d", code, exitUsage)
 		}
@@ -236,7 +257,7 @@ func TestRunMapPositionalArgs(t *testing.T) {
 	ri := loadFixtureIndex(t)
 	_, errb := captureWriter(t)
 
-	code := runMap([]string{"extra"}, ri, false)
+	code := runWith(t, []string{"map", "extra"}, ri)
 	if code != exitUsage {
 		t.Errorf("exit = %d, want %d", code, exitUsage)
 	}
@@ -246,10 +267,10 @@ func TestRunMapPositionalArgs(t *testing.T) {
 }
 
 func TestRunGlobalIndexFlag(t *testing.T) {
-	// --index is a global flag: it must work before the verb as well as
-	// after. Regression: extraction used to scan only the args after the
-	// verb, so "scipq --index foo.scip map" silently fell back to
-	// ./index.scip and exited 2.
+	// --index is a persistent root flag: it must work before the verb as
+	// well as after. Regression: extraction used to scan only the args
+	// after the verb, so "scipq --index foo.scip map" silently fell back
+	// to ./index.scip and exited 2.
 	tests := []struct {
 		name string
 		argv []string
@@ -257,6 +278,7 @@ func TestRunGlobalIndexFlag(t *testing.T) {
 		{"before verb", []string{"--index", "../../testdata/index.scip", "map"}},
 		{"after verb", []string{"map", "--index", "../../testdata/index.scip"}},
 		{"equals form before verb", []string{"--index=../../testdata/index.scip", "map"}},
+		{"equals form after verb", []string{"map", "--index=../../testdata/index.scip"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -282,6 +304,17 @@ func TestRunGlobalIndexFlag(t *testing.T) {
 		}
 	})
 
+	t.Run("missing index after verb exits 2", func(t *testing.T) {
+		_, errb := captureWriter(t)
+		code := run([]string{"map", "--index", "/nonexistent/index.scip"})
+		if code != exitNoIndex {
+			t.Errorf("exit = %d, want %d", code, exitNoIndex)
+		}
+		if errb.Len() == 0 {
+			t.Error("expected diagnostic on stderr")
+		}
+	})
+
 	t.Run("no verb is usage error", func(t *testing.T) {
 		_, errb := captureWriter(t)
 		code := run([]string{"--index", "../../testdata/index.scip"})
@@ -290,6 +323,17 @@ func TestRunGlobalIndexFlag(t *testing.T) {
 		}
 		if errb.Len() == 0 {
 			t.Error("expected usage on stderr")
+		}
+	})
+
+	t.Run("unknown verb is usage error", func(t *testing.T) {
+		_, errb := captureWriter(t)
+		code := run([]string{"bogus"})
+		if code != exitUsage {
+			t.Errorf("exit = %d, want %d", code, exitUsage)
+		}
+		if !contains(errb.String(), "unknown verb") {
+			t.Errorf("stderr missing unknown-verb diagnostic:\n%s", errb.String())
 		}
 	})
 }
@@ -339,62 +383,6 @@ func TestParamFragmentsExcluded(t *testing.T) {
 				t.Errorf("cluster %q hub %q looks like a parameter fragment", c.Dir, h.Symbol)
 			}
 		}
-	}
-}
-
-func TestExtractStringFlag(t *testing.T) {
-	tests := []struct {
-		name      string
-		args      []string
-		wantValue string
-		wantRest  []string
-		wantErr   bool
-	}{
-		{
-			name:      "space form",
-			args:      []string{"--index", "a.scip", "--json"},
-			wantValue: "a.scip",
-			wantRest:  []string{"--json"},
-		},
-		{
-			name:      "equals form",
-			args:      []string{"--index=b.scip", "other"},
-			wantValue: "b.scip",
-			wantRest:  []string{"other"},
-		},
-		{
-			name:      "absent",
-			args:      []string{"--json"},
-			wantValue: "",
-			wantRest:  []string{"--json"},
-		},
-		{
-			name:    "missing value",
-			args:    []string{"--index"},
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			v, rest, err := extractStringFlag(tt.args, "index")
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
-			}
-			if tt.wantErr {
-				return
-			}
-			if v != tt.wantValue {
-				t.Errorf("value = %q, want %q", v, tt.wantValue)
-			}
-			if len(rest) != len(tt.wantRest) {
-				t.Fatalf("rest = %v, want %v", rest, tt.wantRest)
-			}
-			for i := range rest {
-				if rest[i] != tt.wantRest[i] {
-					t.Errorf("rest[%d] = %q, want %q", i, rest[i], tt.wantRest[i])
-				}
-			}
-		})
 	}
 }
 
