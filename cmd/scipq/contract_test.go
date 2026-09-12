@@ -133,14 +133,26 @@ func TestStubVerbsHiddenFromHelp(t *testing.T) {
 func TestShellCompletion(t *testing.T) {
 	ri := loadFixtureIndex(t)
 
-	t.Run("completion subcommand emits bash script", func(t *testing.T) {
-		out, errb := captureWriter(t)
-		code := runWith(t, []string{"completion", "bash"}, ri)
-		if code != exitOK {
-			t.Fatalf("completion bash exit = %d, want %d (stderr: %q)", code, exitOK, errb.String())
-		}
-		if !contains(out.String(), "shell completion script") {
-			t.Errorf("completion bash output is not a completion script:\n%s", out.String())
+	t.Run("completion subcommand emits script for every supported shell", func(t *testing.T) {
+		// The subcommand list is framework-defined: bash, zsh, fish, pwsh.
+		// Note the PowerShell subcommand is "pwsh", not "powershell" —
+		// the framework's description string says "Powershell" but that
+		// is not the subcommand name (completion powershell exits 1).
+		for _, shell := range []string{"bash", "zsh", "fish", "pwsh"} {
+			t.Run(shell, func(t *testing.T) {
+				out, errb := captureWriter(t)
+				code := runWith(t, []string{"completion", shell}, ri)
+				if code != exitOK {
+					t.Fatalf("completion %s exit = %d, want %d (stderr: %q)", shell, code, exitOK, errb.String())
+				}
+				// Script bodies differ per shell (bash/zsh/fish carry a
+				// "shell completion script" header comment; pwsh emits
+				// Register-ArgumentCompleter directly), so assert on the
+				// common contract: non-empty script output.
+				if out.Len() == 0 {
+					t.Errorf("completion %s produced no output", shell)
+				}
+			})
 		}
 	})
 

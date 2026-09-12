@@ -85,8 +85,11 @@ for per-verb help (`scipq map -h`).
 ```bash
 # bash
 source <(scipq completion bash)
-# zsh / fish / powershell
-scipq completion zsh   # (also: fish, powershell)
+# zsh
+source <(scipq completion zsh)
+# fish / pwsh (PowerShell)
+scipq completion fish
+scipq completion pwsh
 ```
 
 `blast`, `skeleton`, and `dead` are not implemented yet — they are
