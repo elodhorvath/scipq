@@ -107,3 +107,62 @@ func TestStubVerbDiagnostic(t *testing.T) {
 		t.Errorf("stderr missing stub diagnostic:\n%s", errb.String())
 	}
 }
+
+func TestStubVerbsHiddenFromHelp(t *testing.T) {
+	// Stubs stay invocable but must not read as real verbs in help or
+	// completion output.
+	_, errb := captureWriter(t)
+	ri := loadFixtureIndex(t)
+	code := runWith(t, []string{}, ri)
+	if code != exitUsage {
+		t.Fatalf("bare invocation exit = %d, want %d", code, exitUsage)
+	}
+	usage := errb.String()
+	for _, stub := range []string{"blast", "skeleton", "dead"} {
+		if contains(usage, stub) {
+			t.Errorf("usage output lists stub verb %q:\n%s", stub, usage)
+		}
+	}
+	for _, live := range []string{"map", "callers"} {
+		if !contains(usage, live) {
+			t.Errorf("usage output missing live verb %q:\n%s", live, usage)
+		}
+	}
+}
+
+func TestShellCompletion(t *testing.T) {
+	ri := loadFixtureIndex(t)
+
+	t.Run("completion subcommand emits script for every supported shell", func(t *testing.T) {
+		// The subcommand list is framework-defined: bash, zsh, fish, pwsh.
+		// Note the PowerShell subcommand is "pwsh", not "powershell" —
+		// the framework's description string says "Powershell" but that
+		// is not the subcommand name (completion powershell exits 1).
+		for _, shell := range []string{"bash", "zsh", "fish", "pwsh"} {
+			t.Run(shell, func(t *testing.T) {
+				out, errb := captureWriter(t)
+				code := runWith(t, []string{"completion", shell}, ri)
+				if code != exitOK {
+					t.Fatalf("completion %s exit = %d, want %d (stderr: %q)", shell, code, exitOK, errb.String())
+				}
+				// Script bodies differ per shell (bash/zsh/fish carry a
+				// "shell completion script" header comment; pwsh emits
+				// Register-ArgumentCompleter directly), so assert on the
+				// common contract: non-empty script output.
+				if out.Len() == 0 {
+					t.Errorf("completion %s produced no output", shell)
+				}
+			})
+		}
+	})
+
+	// Note: the --generate-shell-completion flag path is not asserted
+	// here because urfave/cli's DefaultCompleteWithFlags reads the
+	// process-global os.Args (not the argv passed to Run) when completing
+	// the root command, so its output is not deterministic under `go
+	// test`. The completion subcommand path above covers script
+	// generation; flag suggestions are exercised by real shells.
+	// Hidden stubs are excluded from completion by the framework
+	// (printCommandSuggestions skips Hidden commands) — pinned via
+	// TestStubVerbsHiddenFromHelp for the usage path.
+}
