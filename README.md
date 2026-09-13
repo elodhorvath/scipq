@@ -50,6 +50,10 @@ scip-dotnet index MySolution.sln --output index.scip
 Then commit or regenerate `index.scip` per your workflow (git hook, CI, or
 pre-commit for local dev).
 
+CI note: this repo's own CI self-indexes scipq with scip-go on every run and
+publishes `index.scip` as a workflow artifact (30-day retention) — see the
+`self-index` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
 ## Usage
 
 ```bash
