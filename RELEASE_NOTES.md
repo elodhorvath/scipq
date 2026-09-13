@@ -1,52 +1,71 @@
-# scipq v0.1.0
+# What's new in v0.2.0
 
-First tagged release: the SCIP index reader, `map`, and `callers`.
+New in v0.2.0: the `blast` verb, a CLI framework migration, and CI self-indexing.
 
-## What this is
+## New verb: `blast` — diff impact analysis
 
-scipq answers code-graph questions about a codebase from its SCIP index —
-deterministically, in milliseconds, with no LLM and no telemetry. It reads
-`index.scip` produced by any SCIP indexer (scip-dotnet, scip-python,
-scip-typescript, scip-go, …) and prints plain data.
-
-## Highlights
-
-- **`scipq map`** — one-screen repo orientation: per-directory clusters,
-  hub symbols ranked by reference in-degree, repo-wide hotspots. Under
-  ~800 tokens for a 300-file repo.
-- **`scipq callers <symbol>`** — exact reference sites for a symbol,
-  resolved by full symbol string or name suffix. References through
-  interface chains are attributed transitively, labeled with the
-  implementing symbol.
-- **Verified on real codebases** — including C# virtual dispatch through
-  a factory resolver, the pattern where syntax-only tools miss the graph.
-
-## Design guarantees
-
-Deterministic. No LLM. No telemetry. No network. Data-only stdout.
-Single static binary — no runtime dependencies.
-
-## Install
+`scipq blast` answers "what can my change break?" from a unified diff on
+stdin:
 
 ```bash
-go install github.com/elodhorvath/scipq/cmd/scipq@v0.1.0
+git diff -U0 | scipq blast
+git diff -U0 | scipq blast --depth 3
+git diff -U0 | scipq blast --json
 ```
 
-Or grab a prebuilt binary from the assets below
-(darwin/linux/windows × amd64/arm64; checksums in `checksums.txt`).
+- Maps changed lines to symbols defined on them (exact containment), then
+  walks transitive dependents: reverse references plus implements chains
+  (`--depth`, default 2).
+- Surfaces module-internal references to undefined symbols as `broken ref`
+  — the deletion channel: a deleted symbol's references are reported as
+  broken even though the diff itself contains no `+` lines.
+- Flags symbols with no `*_test.go` references as `untested`.
+- Output grouped by directory, deterministic ordering, `--json` machine
+  mode.
 
-## Usage
+## CLI framework migration
 
-```bash
-scipq map                  # repo orientation
-scipq callers <symbol>     # who uses this symbol
-```
+Command routing moved to urfave/cli v3:
 
-Every command: exit 0 on success, 1 on usage error, 2 on missing index.
-`--json` on any verb for machine-readable output. `--index <path>` to
-locate the index (default `./index.scip`).
+- `--index` and `--json` are persistent root flags: they parse in any
+  position, before or after the verb (`scipq --index x map` and
+  `scipq map --index x` are equivalent).
+- Per-verb help (`scipq <verb> -h`) and shell completions
+  (`scipq completion bash|zsh|fish|pwsh`).
+- Exit-code contract unchanged (0 success / 1 usage / 2 missing index),
+  with documented precedence: argument and flag errors are reported
+  before missing-index errors — exit 2 applies to otherwise well-formed
+  invocations.
+- Every failure prints a `scipq:`-prefixed diagnostic on stderr; a
+  nonzero exit is never silent.
+- `--flag` is the documented form; the framework also tolerates the
+  single-dash spelling (`-json`).
 
-## Building an index
+## JSON schema change: blast broken refs
 
-scipq consumes indexes; use the indexer for your language (e.g.
-`scip-dotnet index MySolution.sln --output index.scip` for .NET).
+`scipq blast --json` omits `file` and `line` keys for `broken ref`
+entries (no definition site exists). Parsers written against the
+develop-track builds that emitted `"file": "", "line": 0` must accept a
+missing key. No tagged release shipped the previous shape.
+
+## Agent skill
+
+An agent-facing skill ships at `skills/scipq/`: decision policy (when to
+query instead of reading source), agent-UX contract, and per-verb
+reference including worked examples verified against the binary.
+Point a coding agent at the path, or copy it into the agent's skill
+directory.
+
+## map rendering
+
+Hub names now handle scip-go symbol shapes found by running scipq on its
+own index: package-level symbols render as their last path segment
+(`exitUsage`, not the backticked package path), and `local N` symbols
+render as `local N` rather than a bare digit.
+
+## CI
+
+- Every run self-indexes the repo with scip-go (pinned tarball,
+  sha256-verified), sanity-checks the index through `scipq map --json`,
+  and publishes `index.scip` as a workflow artifact (30-day retention).
+- Markdown lint on all PRs.
