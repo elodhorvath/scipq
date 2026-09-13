@@ -19,8 +19,8 @@ Ask the question, get the verb:
 | Who uses / references / calls X? Who implements this interface? | `callers` |
 | What is this repo/package? Where are the hubs and hotspots? | `map` |
 | What breaks if I change X? (given a diff) | `blast` |
-| What's this file's API surface? | *(not shipped yet — read the file)* |
-| What's defined but never referenced? | *(not shipped yet)* |
+| What's this file's API surface? | `skeleton` |
+| What's defined but never referenced? | `dead` |
 
 Reach for scipq **before** opening source files whenever the question is
 structural (who/where/how-many), not textual (what does this code say).
@@ -52,6 +52,12 @@ These behaviors are pinned and safe to build on:
   in any position, before or after the verb.
 - **Per-verb help**: `scipq <verb> -h`.
 - **Shell completions**: `scipq completion bash|zsh|fish|pwsh`.
+- **Out-of-root documents are filtered at load.** Documents whose relative
+  path escapes the project root (absolute, or a leading `..` after
+  cleaning) are skipped for every verb — they are indexer leakage (e.g.
+  scip-go build-cache artifacts), not project content. `map` surfaces the
+  dropped count as `externalDocsHidden` in JSON and `(N external docs
+  hidden)` in the human header; other verbs simply exclude the noise.
 
 ## Quick start
 
@@ -62,13 +68,17 @@ These behaviors are pinned and safe to build on:
 scipq map                          # orient: clusters, hubs, hotspots
 scipq callers Animal#Speak         # who uses this symbol
 git diff -U0 | scipq blast         # what does my change break
+scipq skeleton animal.go           # file API surface, no bodies
+scipq dead                         # dead-code candidates, grouped by directory
 ```
 
 All verbs accept `--json` for machine-readable output. Per-verb flags,
 JSON schemas, and worked examples: see `reference/verbs/` —
 [map](reference/verbs/map.md),
 [callers](reference/verbs/callers.md),
-[blast](reference/verbs/blast.md).
+[blast](reference/verbs/blast.md),
+[skeleton](reference/verbs/skeleton.md),
+[dead](reference/verbs/dead.md).
 
 ## Version posture
 

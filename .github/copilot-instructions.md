@@ -61,6 +61,26 @@ When the user says "work on issue N" (or similar):
 - Build: `go build ./...` must pass. Test: `go test ./...` must pass before any PR.
 - Formatting: `gofmt` (no config). Lint: `go vet ./...` clean.
 
+## Working style
+
+- **No probe loops.** When a command, test, or read fails to produce new
+  information, stop and change approach — check the call path or re-read the
+  requirement instead of re-running the same probe. Never re-read a file
+  already read this session; never repeat a query that just returned the same
+  answer. If two attempts don't converge, state the blocker and ask.
+- **Read the error before re-running anything.** A failure message is new
+  information — parse it, then change the command. The specific trap: a
+  command that fails with a *diagnostic* (not a transient error) will fail
+  identically every time; re-running it verbatim is guaranteed waste. Real
+  case: `json.load` returned a dict, the script iterated it and died with
+  `TypeError: string indices must be integers` — the fix was one line
+  (`if isinstance(x, dict): x = [x]`), but the identical command was re-run
+  ~30 times before reading the traceback. Rule: **the same command must
+  never be executed twice in a row after a failure** — the second run must
+  differ (different command, different input, or a fix applied). If you
+  cannot state what you changed between attempt N and attempt N+1, you are
+  looping.
+
 ## Code conventions
 
 - **Error handling:** wrap with `fmt.Errorf("verb: %w", err)`; never discard errors; never panic outside init-time invariant checks.

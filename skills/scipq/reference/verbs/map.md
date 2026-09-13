@@ -27,6 +27,7 @@ Takes no positional arguments.
 {
   "files": 5,
   "symbols": 5,
+  "externalDocsHidden": 0,
   "clusters": [
     {
       "dir": ".",
@@ -52,6 +53,16 @@ Takes no positional arguments.
   whole symbol for scip-go locals (`local 8`).
 - `hotspots` sorted by descending refs, then file; top 5.
 - `truncated` is `true` when `--limit` cut clusters.
+- `externalDocsHidden` is the number of documents the index layer skipped
+  because their relative path escapes the project root (absolute, or a
+  leading `..` after cleaning) — e.g. scip-go test-compile artifacts under
+  the Go build cache. Totals, clusters, and hotspots all describe the
+  filtered project; the count keeps the exclusion honest. The human
+  header appends `(N external docs hidden)` when N > 0.
+- Known limitation: paths that escape semantically but not syntactically
+  (clean relative paths written against a different root than
+  `project_root` claims) are not detected — the filter is
+  metadata-independent by design and does not resolve roots.
 
 ## Exit codes
 
@@ -76,3 +87,16 @@ services/handler.go (1 refs)
 Reading: `./` is the densest cluster (4 symbols, hub `Speak` referenced
 3×); `services/` has files but no defined symbols — it consumes the graph.
 `services/zoo.go` attracts the most references repo-wide.
+
+On a real scip-go index with build-cache leakage, the header carries the
+hidden count. Verified against scipq's own self-index (CI artifact):
+
+```bash
+$ scipq map
+16 files · 461 symbols (2 external docs hidden)
+cmd/scipq/  13 files · 408 symbols   hubs: exitOK (72←), …
+…
+```
+
+The two hidden docs are the `.test` binary-package artifacts scip-go
+records under the Go build cache.

@@ -4,12 +4,15 @@
 package index
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"slices"
+	"strings"
 
 	scip "github.com/scip-code/scip/bindings/go/scip"
 )
@@ -25,12 +28,34 @@ type Site struct {
 	Line int32
 }
 
+// SymbolDef is one definition occurrence in a document: the symbol string
+// and its zero-based start line.
+type SymbolDef struct {
+	Symbol string
+	Line   int32
+}
+
+// SymbolInfo is the indexer-recorded metadata for a symbol: its kind and
+// display name. Both are optional in SCIP; empty values mean the indexer
+// did not record them.
+type SymbolInfo struct {
+	Kind        string
+	DisplayName string
+}
+
 // ReverseIndex maps symbols to the places they are referenced and defined,
 // plus the implements/overrides relationship edges extracted from the index.
 // All lookup methods return results in deterministic (document, line) order.
 type ReverseIndex struct {
 	refs map[string][]Site
 	defs map[string][]Site
+	// defsByFile indexes definition occurrences by document: file →
+	// (symbol, line) pairs. Answers per-file def listings (the skeleton
+	// verb) without an O(defs) scan per query.
+	defsByFile map[string][]SymbolDef
+	// symInfo records indexer-provided SymbolInformation per symbol:
+	// kind and display name, when the indexer records them.
+	symInfo map[string]SymbolInfo
 	// impls holds implements edges as declared in the index: keyed by the
 	// implementing symbol, values are the symbols it implements. implsOf is
 	// the inverse: keyed by the implemented symbol, values are its
@@ -39,6 +64,10 @@ type ReverseIndex struct {
 	implsOf  map[string][]string
 	files    map[string]struct{}
 	fileRefs map[string]int
+	// droppedDocs counts documents skipped at load time because their
+	// relative path escapes the project root (see escapesRoot). Verbs
+	// surface the count so filtered data is never silently lost.
+	droppedDocs int
 }
 
 // Refs returns every reference site for symbol. The result is a copy;
@@ -117,6 +146,13 @@ func (r *ReverseIndex) FileRefCounts() map[string]int {
 	return out
 }
 
+// DroppedDocs returns the number of documents skipped at load time because
+// their relative path escapes the project root. Verbs surface the count so
+// the filtering stays honest about what was excluded.
+func (r *ReverseIndex) DroppedDocs() int {
+	return r.droppedDocs
+}
+
 // RefsAll returns the full reference map: symbol → reference sites. The
 // returned map is a copy; mutating it does not affect the index.
 func (r *ReverseIndex) RefsAll() map[string][]Site {
@@ -137,6 +173,20 @@ func (r *ReverseIndex) DefsAll() map[string][]Site {
 	return out
 }
 
+// DefsInFile returns every definition occurrence in file, sorted by
+// (line, symbol). Unknown files yield an empty slice. The result is a
+// copy; callers may mutate it freely.
+func (r *ReverseIndex) DefsInFile(file string) []SymbolDef {
+	out := append([]SymbolDef(nil), r.defsByFile[file]...)
+	slices.SortFunc(out, func(a, b SymbolDef) int {
+		if a.Line != b.Line {
+			return cmp.Compare(a.Line, b.Line)
+		}
+		return strings.Compare(a.Symbol, b.Symbol)
+	})
+	return out
+}
+
 // Load parses the SCIP index at path and builds a ReverseIndex over it.
 // It returns an error wrapping ErrNotFound when the file does not exist.
 func Load(path string) (*ReverseIndex, error) {
@@ -153,12 +203,14 @@ func Load(path string) (*ReverseIndex, error) {
 	defer f.Close()
 
 	ri := &ReverseIndex{
-		refs:     map[string][]Site{},
-		defs:     map[string][]Site{},
-		impls:    map[string][]string{},
-		implsOf:  map[string][]string{},
-		files:    map[string]struct{}{},
-		fileRefs: map[string]int{},
+		refs:       map[string][]Site{},
+		defs:       map[string][]Site{},
+		defsByFile: map[string][]SymbolDef{},
+		symInfo:    map[string]SymbolInfo{},
+		impls:      map[string][]string{},
+		implsOf:    map[string][]string{},
+		files:      map[string]struct{}{},
+		fileRefs:   map[string]int{},
 	}
 	visitor := &scip.IndexVisitor{
 		VisitDocument: func(_ context.Context, doc *scip.Document) error {
@@ -176,10 +228,36 @@ func Load(path string) (*ReverseIndex, error) {
 	return ri, nil
 }
 
+// escapesRoot reports whether a document's relative path escapes the
+// project root. SCIP defines RelativePath as relative to project_root and
+// forbids escaping it, so a path that is absolute or still carries a
+// leading ".." after cleaning is indexer leakage (e.g. scip-go test-compile
+// artifacts under the Go build cache), not project content.
+//
+// The test is metadata-independent: it never reads metadata.project_root,
+// so behavior is identical whether or not the index records a root. One
+// code path, always on.
+//
+// Known limitation (documented, not solved): paths that escape semantically
+// but not syntactically — clean relative paths written against a different
+// root than project_root claims — are undetectable without trusting the
+// metadata, which this predicate deliberately does not.
+func escapesRoot(rel string) bool {
+	if path.IsAbs(rel) {
+		return true
+	}
+	clean := path.Clean(rel)
+	return clean == ".." || strings.HasPrefix(clean, "../")
+}
+
 // addDocument records reference and definition sites for every occurrence in
 // the document, and relationship edges for the symbols it defines.
 func (r *ReverseIndex) addDocument(doc *scip.Document) {
 	path := doc.GetRelativePath()
+	if escapesRoot(path) {
+		r.droppedDocs++
+		return
+	}
 	r.files[path] = struct{}{}
 	for _, occ := range doc.GetOccurrences() {
 		sym := occ.GetSymbol()
@@ -189,6 +267,7 @@ func (r *ReverseIndex) addDocument(doc *scip.Document) {
 		site := Site{File: path, Line: startLine(occ.GetRange())}
 		if occ.GetSymbolRoles()&int32(scip.SymbolRole_Definition) != 0 {
 			r.defs[sym] = append(r.defs[sym], site)
+			r.defsByFile[path] = append(r.defsByFile[path], SymbolDef{Symbol: sym, Line: site.Line})
 		} else {
 			r.refs[sym] = append(r.refs[sym], site)
 			r.fileRefs[path]++
@@ -196,7 +275,35 @@ func (r *ReverseIndex) addDocument(doc *scip.Document) {
 	}
 	for _, si := range doc.GetSymbols() {
 		r.addRelationships(si)
+		r.recordSymbolInfo(si)
 	}
+}
+
+// recordSymbolInfo stores the indexer-provided kind and display name for
+// si, when present. First recording wins: a symbol declared in several
+// documents keeps its initial metadata.
+func (r *ReverseIndex) recordSymbolInfo(si *scip.SymbolInformation) {
+	sym := si.GetSymbol()
+	if sym == "" {
+		return
+	}
+	if _, ok := r.symInfo[sym]; ok {
+		return
+	}
+	info := SymbolInfo{
+		Kind:        si.GetKind().String(),
+		DisplayName: si.GetDisplayName(),
+	}
+	if info.Kind == "UnspecifiedKind" && info.DisplayName == "" {
+		return // nothing recorded; leave absent so lookups yield zero values
+	}
+	r.symInfo[sym] = info
+}
+
+// SymbolInfo returns the indexer-recorded kind and display name for
+// symbol. Unrecorded symbols yield zero values.
+func (r *ReverseIndex) SymbolInfo(symbol string) SymbolInfo {
+	return r.symInfo[symbol]
 }
 
 // addRelationships records implements/overrides edges declared by si. Per

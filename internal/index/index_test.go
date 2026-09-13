@@ -382,3 +382,151 @@ func TestAccessors(t *testing.T) {
 		}
 	})
 }
+
+// TestEscapesRoot pins the out-of-root predicate: absolute paths and paths
+// that keep a leading ".." after cleaning escape the project root; clean
+// relative paths do not. The predicate is metadata-independent by design.
+func TestEscapesRoot(t *testing.T) {
+	tests := []struct {
+		rel  string
+		want bool
+	}{
+		{"animal.go", false},
+		{"util/helper.go", false},
+		{"./animal.go", false},
+		{"a/../b.go", false}, // cleans to b.go — inside the root
+		{"../cache.go", true},
+		{"../../.cache/go-build/08/x.go", true},
+		{"..", true},
+		{"../..", true},
+		{"/abs/path/x.go", true},
+		{"/x.go", true},
+		{"", false}, // empty path: nothing to reject
+	}
+	for _, tt := range tests {
+		if got := escapesRoot(tt.rel); got != tt.want {
+			t.Errorf("escapesRoot(%q) = %v, want %v", tt.rel, got, tt.want)
+		}
+	}
+}
+
+// outOfRootFixture builds an index with one in-root document and two
+// out-of-root documents (a "../"-escaping build-cache path and an absolute
+// path), each carrying a definition and a reference, to pin the load-time
+// exclusion of indexer leakage.
+func outOfRootFixture() *scip.Index {
+	inRoot := "go github.com/example/inroot Thing."
+	cacheSym := "go github.com/example/cache Cached."
+	absSym := "go github.com/example/abs Absolute."
+
+	def := func(sym string, line int32) *scip.Occurrence {
+		return &scip.Occurrence{
+			Range:       []int32{line, 0, 10},
+			Symbol:      sym,
+			SymbolRoles: int32(scip.SymbolRole_Definition),
+		}
+	}
+	ref := func(sym string, line int32) *scip.Occurrence {
+		return &scip.Occurrence{Range: []int32{line, 0, 10}, Symbol: sym}
+	}
+
+	return &scip.Index{
+		Metadata: &scip.Metadata{
+			ToolInfo:    &scip.ToolInfo{Name: "scipq-test", Version: "0.0.0"},
+			ProjectRoot: "file:///synthetic",
+		},
+		Documents: []*scip.Document{
+			{
+				RelativePath: "inroot.go",
+				Occurrences: []*scip.Occurrence{
+					def(inRoot, 1),
+					ref(cacheSym, 2),
+					ref(absSym, 3),
+				},
+			},
+			{
+				RelativePath: "../../.cache/go-build/08/x.go",
+				Occurrences: []*scip.Occurrence{
+					def(cacheSym, 0),
+					ref(inRoot, 4),
+				},
+			},
+			{
+				RelativePath: "/abs/path/y.go",
+				Occurrences: []*scip.Occurrence{
+					def(absSym, 0),
+					ref(inRoot, 5),
+				},
+			},
+		},
+	}
+}
+
+// TestLoadDropsOutOfRootDocuments pins the index-layer filter: documents
+// whose relative path escapes the project root are skipped entirely at load
+// time — no files entry, no defs, no refs — and the dropped count is
+// surfaced for honest reporting.
+func TestLoadDropsOutOfRootDocuments(t *testing.T) {
+	ri, err := Load(writeTestIndex(t, outOfRootFixture()))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	t.Run("in-root document fully present", func(t *testing.T) {
+		wantFiles := []string{"inroot.go"}
+		if got := ri.Files(); !slices.Equal(got, wantFiles) {
+			t.Errorf("Files() = %v, want %v", got, wantFiles)
+		}
+		wantDefs := []Site{{File: "inroot.go", Line: 1}}
+		if got := ri.Defs("go github.com/example/inroot Thing."); !slices.Equal(got, wantDefs) {
+			t.Errorf("Defs(inroot) = %v, want %v", got, wantDefs)
+		}
+		// References recorded in out-of-root documents must not appear.
+		if got := ri.Refs("go github.com/example/cache Cached."); !slices.Equal(got, []Site{{File: "inroot.go", Line: 2}}) {
+			t.Errorf("Refs(cacheSym) = %v, want [{inroot.go 2}]", got)
+		}
+		if got := ri.Refs("go github.com/example/abs Absolute."); !slices.Equal(got, []Site{{File: "inroot.go", Line: 3}}) {
+			t.Errorf("Refs(absSym) = %v, want [{inroot.go 3}]", got)
+		}
+		// Symbols defined only in out-of-root documents are not defined
+		// symbols of this index.
+		wantSyms := []string{"go github.com/example/inroot Thing."}
+		if got := ri.DefinedSymbols(); !slices.Equal(got, wantSyms) {
+			t.Errorf("DefinedSymbols() = %v, want %v", got, wantSyms)
+		}
+	})
+
+	t.Run("out-of-root documents absent", func(t *testing.T) {
+		for _, f := range []string{"../../.cache/go-build/08/x.go", "/abs/path/y.go"} {
+			for _, got := range ri.Files() {
+				if got == f {
+					t.Errorf("Files() contains out-of-root path %q", f)
+				}
+			}
+			if defs := ri.DefsInFile(f); len(defs) != 0 {
+				t.Errorf("DefsInFile(%q) = %v, want none", f, defs)
+			}
+		}
+		if _, ok := ri.FileRefCounts()["/abs/path/y.go"]; ok {
+			t.Errorf("FileRefCounts() contains out-of-root path")
+		}
+	})
+
+	t.Run("dropped count", func(t *testing.T) {
+		if got := ri.DroppedDocs(); got != 2 {
+			t.Errorf("DroppedDocs() = %d, want 2", got)
+		}
+	})
+}
+
+// TestLoadDropsNothingOnConformantIndex pins the no-op case: an index whose
+// paths all conform reports zero dropped documents.
+func TestLoadDropsNothingOnConformantIndex(t *testing.T) {
+	ri, err := Load(writeTestIndex(t, fixtureIndex()))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := ri.DroppedDocs(); got != 0 {
+		t.Errorf("DroppedDocs() = %d, want 0", got)
+	}
+}
