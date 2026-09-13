@@ -153,3 +153,36 @@ func TestShellCompletion(t *testing.T) {
 	// (printCommandSuggestions skips Hidden commands) — pinned via
 	// TestStubVerbsHiddenFromHelp for the usage path.
 }
+
+// TestFrameworkErrorsArePrinted pins the #29 contract: errors from
+// framework-built subcommands (the completion tree) that are not our
+// exitError must be printed to stderr with the scipq: prefix before
+// runError maps them to exit 1. The framework's ExitErrHandler is a
+// no-op (the #25/#26 test seam), so nothing else prints these errors —
+// without the print, `scipq completion badshell` exits 1 with zero
+// bytes of output, indistinguishable from success.
+func TestFrameworkErrorsArePrinted(t *testing.T) {
+	ri := loadFixtureIndex(t)
+
+	t.Run("unknown shell in completion tree", func(t *testing.T) {
+		_, errb := captureWriter(t)
+		code := runWith(t, []string{"completion", "badshell"}, ri)
+		if code != exitUsage {
+			t.Fatalf("completion badshell exit = %d, want %d", code, exitUsage)
+		}
+		if !contains(errb.String(), "scipq:") {
+			t.Errorf("completion badshell printed no scipq-prefixed diagnostic (stderr: %q)", errb.String())
+		}
+	})
+
+	t.Run("help topic miss in completion tree", func(t *testing.T) {
+		_, errb := captureWriter(t)
+		code := runWith(t, []string{"completion", "help"}, ri)
+		if code != exitUsage {
+			t.Fatalf("completion help exit = %d, want %d", code, exitUsage)
+		}
+		if !contains(errb.String(), "scipq:") {
+			t.Errorf("completion help printed no scipq-prefixed diagnostic (stderr: %q)", errb.String())
+		}
+	})
+}
