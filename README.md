@@ -95,8 +95,8 @@ scipq completion fish
 scipq completion pwsh
 ```
 
-`skeleton` and `dead` are not implemented yet — they are hidden from
-help and completion until they land.
+`dead` is not implemented yet — it is hidden from help and completion
+until it lands.
 
 ### `map` — repo orientation
 
@@ -191,6 +191,42 @@ broken refs still surface (they are breaks regardless of the diff). A
 terminal stdin (no pipe) is a usage error (exit 1) — note `/dev/null`
 redirect counts as a terminal (char-device check), so CI scripts should
 pipe explicitly. Missing index exits 2.
+
+### `skeleton` — file API surface
+
+What's in this file's public API? Every symbol defined in a file, no
+bodies: display name, best-effort kind, 1-based start line, and the
+exported marker. Language-agnostic — whatever the indexer recorded as
+definitions in that document.
+
+```bash
+$ scipq skeleton animal.go
+animal.go  (2 symbols)
+     2  type     Animal  +exported
+     3  method   Speak   +exported
+```
+
+Resolution: exact path match wins; otherwise the query suffix-matches
+indexed paths at a `/` boundary (`zoo.go` → `services/zoo.go`). An
+ambiguous suffix (several files share the basename) lists all matches on
+stderr and exits 1; an unknown file is also a usage error (exit 1).
+Missing index exits 2.
+
+SCIP locals (`local 8`) and bare package clauses (`` `pkg/path`/ ``) are
+dropped — they carry no API information. Package-level named
+declarations (`` `pkg`/maxSize. ``) are kept: they are the payload.
+
+Kind is best-effort: the indexer's recorded kind when populated, else
+derived from the symbol descriptor grammar (`#`+`()` → `method`, `#`
+→ `property`, `()` → `function`, trailing `.` → `type`, else `def`).
+The exported marker is the case-based convention shared by Go and C#
+(capitalized = exported) — a heuristic, not a language service.
+
+Flags:
+
+- `--json` — machine-readable equivalent (`file`, `symbols[]` with
+  `symbol`, `name`, `kind`, 1-based `line`, `exported`).
+- `--index <path>` — index location (default `./index.scip`).
 
 ## Verbs
 

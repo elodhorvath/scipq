@@ -19,7 +19,7 @@ Ask the question, get the verb:
 | Who uses / references / calls X? Who implements this interface? | `callers` |
 | What is this repo/package? Where are the hubs and hotspots? | `map` |
 | What breaks if I change X? (given a diff) | `blast` |
-| What's this file's API surface? | *(not shipped yet — read the file)* |
+| What's this file's API surface? | `skeleton` |
 | What's defined but never referenced? | *(not shipped yet)* |
 
 Reach for scipq **before** opening source files whenever the question is
@@ -62,13 +62,15 @@ These behaviors are pinned and safe to build on:
 scipq map                          # orient: clusters, hubs, hotspots
 scipq callers Animal#Speak         # who uses this symbol
 git diff -U0 | scipq blast         # what does my change break
+scipq skeleton animal.go           # file API surface, no bodies
 ```
 
 All verbs accept `--json` for machine-readable output. Per-verb flags,
 JSON schemas, and worked examples: see `reference/verbs/` —
 [map](reference/verbs/map.md),
 [callers](reference/verbs/callers.md),
-[blast](reference/verbs/blast.md).
+[blast](reference/verbs/blast.md),
+[skeleton](reference/verbs/skeleton.md).
 
 ## Version posture
 

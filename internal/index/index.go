@@ -4,12 +4,14 @@
 package index
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"slices"
+	"strings"
 
 	scip "github.com/scip-code/scip/bindings/go/scip"
 )
@@ -25,12 +27,34 @@ type Site struct {
 	Line int32
 }
 
+// SymbolDef is one definition occurrence in a document: the symbol string
+// and its zero-based start line.
+type SymbolDef struct {
+	Symbol string
+	Line   int32
+}
+
+// SymbolInfo is the indexer-recorded metadata for a symbol: its kind and
+// display name. Both are optional in SCIP; empty values mean the indexer
+// did not record them.
+type SymbolInfo struct {
+	Kind        string
+	DisplayName string
+}
+
 // ReverseIndex maps symbols to the places they are referenced and defined,
 // plus the implements/overrides relationship edges extracted from the index.
 // All lookup methods return results in deterministic (document, line) order.
 type ReverseIndex struct {
 	refs map[string][]Site
 	defs map[string][]Site
+	// defsByFile indexes definition occurrences by document: file →
+	// (symbol, line) pairs. Answers per-file def listings (the skeleton
+	// verb) without an O(defs) scan per query.
+	defsByFile map[string][]SymbolDef
+	// symInfo records indexer-provided SymbolInformation per symbol:
+	// kind and display name, when the indexer records them.
+	symInfo map[string]SymbolInfo
 	// impls holds implements edges as declared in the index: keyed by the
 	// implementing symbol, values are the symbols it implements. implsOf is
 	// the inverse: keyed by the implemented symbol, values are its
@@ -137,6 +161,20 @@ func (r *ReverseIndex) DefsAll() map[string][]Site {
 	return out
 }
 
+// DefsInFile returns every definition occurrence in file, sorted by
+// (line, symbol). Unknown files yield an empty slice. The result is a
+// copy; callers may mutate it freely.
+func (r *ReverseIndex) DefsInFile(file string) []SymbolDef {
+	out := append([]SymbolDef(nil), r.defsByFile[file]...)
+	slices.SortFunc(out, func(a, b SymbolDef) int {
+		if a.Line != b.Line {
+			return cmp.Compare(a.Line, b.Line)
+		}
+		return strings.Compare(a.Symbol, b.Symbol)
+	})
+	return out
+}
+
 // Load parses the SCIP index at path and builds a ReverseIndex over it.
 // It returns an error wrapping ErrNotFound when the file does not exist.
 func Load(path string) (*ReverseIndex, error) {
@@ -153,12 +191,14 @@ func Load(path string) (*ReverseIndex, error) {
 	defer f.Close()
 
 	ri := &ReverseIndex{
-		refs:     map[string][]Site{},
-		defs:     map[string][]Site{},
-		impls:    map[string][]string{},
-		implsOf:  map[string][]string{},
-		files:    map[string]struct{}{},
-		fileRefs: map[string]int{},
+		refs:       map[string][]Site{},
+		defs:       map[string][]Site{},
+		defsByFile: map[string][]SymbolDef{},
+		symInfo:    map[string]SymbolInfo{},
+		impls:      map[string][]string{},
+		implsOf:    map[string][]string{},
+		files:      map[string]struct{}{},
+		fileRefs:   map[string]int{},
 	}
 	visitor := &scip.IndexVisitor{
 		VisitDocument: func(_ context.Context, doc *scip.Document) error {
@@ -189,6 +229,7 @@ func (r *ReverseIndex) addDocument(doc *scip.Document) {
 		site := Site{File: path, Line: startLine(occ.GetRange())}
 		if occ.GetSymbolRoles()&int32(scip.SymbolRole_Definition) != 0 {
 			r.defs[sym] = append(r.defs[sym], site)
+			r.defsByFile[path] = append(r.defsByFile[path], SymbolDef{Symbol: sym, Line: site.Line})
 		} else {
 			r.refs[sym] = append(r.refs[sym], site)
 			r.fileRefs[path]++
@@ -196,7 +237,35 @@ func (r *ReverseIndex) addDocument(doc *scip.Document) {
 	}
 	for _, si := range doc.GetSymbols() {
 		r.addRelationships(si)
+		r.recordSymbolInfo(si)
 	}
+}
+
+// recordSymbolInfo stores the indexer-provided kind and display name for
+// si, when present. First recording wins: a symbol declared in several
+// documents keeps its initial metadata.
+func (r *ReverseIndex) recordSymbolInfo(si *scip.SymbolInformation) {
+	sym := si.GetSymbol()
+	if sym == "" {
+		return
+	}
+	if _, ok := r.symInfo[sym]; ok {
+		return
+	}
+	info := SymbolInfo{
+		Kind:        si.GetKind().String(),
+		DisplayName: si.GetDisplayName(),
+	}
+	if info.Kind == "UnspecifiedKind" && info.DisplayName == "" {
+		return // nothing recorded; leave absent so lookups yield zero values
+	}
+	r.symInfo[sym] = info
+}
+
+// SymbolInfo returns the indexer-recorded kind and display name for
+// symbol. Unrecorded symbols yield zero values.
+func (r *ReverseIndex) SymbolInfo(symbol string) SymbolInfo {
+	return r.symInfo[symbol]
 }
 
 // addRelationships records implements/overrides edges declared by si. Per
