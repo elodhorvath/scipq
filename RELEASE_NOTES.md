@@ -1,71 +1,70 @@
-# What's new in v0.2.0
+# What's new in v0.3.0
 
-New in v0.2.0: the `blast` verb, a CLI framework migration, and CI self-indexing.
+New in v0.3.0: the planned verb set is complete — `skeleton` and `dead`
+join `map`, `callers`, and `blast` — and an index-layer filter keeps
+external build artifacts out of every verb's output.
 
-## New verb: `blast` — diff impact analysis
+## New verb: `skeleton` — file API surface
 
-`scipq blast` answers "what can my change break?" from a unified diff on
-stdin:
+`scipq skeleton <file>` lists every symbol defined in a file, no bodies:
+display name, best-effort kind (indexer-recorded when available, else
+derived from the symbol descriptor grammar), 1-based start line, and an
+exported marker (case-based convention, documented as a heuristic).
 
 ```bash
-git diff -U0 | scipq blast
-git diff -U0 | scipq blast --depth 3
-git diff -U0 | scipq blast --json
+$ scipq skeleton animal.go
+animal.go  (2 symbols)
+     2  type    Animal  +exported
+     3  method  Speak   +exported
 ```
 
-- Maps changed lines to symbols defined on them (exact containment), then
-  walks transitive dependents: reverse references plus implements chains
-  (`--depth`, default 2).
-- Surfaces module-internal references to undefined symbols as `broken ref`
-  — the deletion channel: a deleted symbol's references are reported as
-  broken even though the diff itself contains no `+` lines.
-- Flags symbols with no `*_test.go` references as `untested`.
-- Output grouped by directory, deterministic ordering, `--json` machine
-  mode.
+Resolution is exact-path first, then suffix match at a `/` boundary;
+ambiguity lists all matches and exits 1. SCIP locals and bare package
+clauses are dropped — they carry no API information.
 
-## CLI framework migration
+## New verb: `dead` — dead-code candidates
 
-Command routing moved to urfave/cli v3:
+`scipq dead` lists definitions with zero reference sites anywhere in the
+index, grouped by directory — the deletion-shortlist verb, with every
+classification rule documented as a heuristic and kept minimal.
 
-- `--index` and `--json` are persistent root flags: they parse in any
-  position, before or after the verb (`scipq --index x map` and
-  `scipq map --index x` are equivalent).
-- Per-verb help (`scipq <verb> -h`) and shell completions
-  (`scipq completion bash|zsh|fish|pwsh`).
-- Exit-code contract unchanged (0 success / 1 usage / 2 missing index),
-  with documented precedence: argument and flag errors are reported
-  before missing-index errors — exit 2 applies to otherwise well-formed
-  invocations.
-- Every failure prints a `scipq:`-prefixed diagnostic on stderr; a
-  nonzero exit is never silent.
-- `--flag` is the documented form; the framework also tolerates the
-  single-dash spelling (`-json`).
+```bash
+$ scipq dead
+5 dead-code candidates · 2 groups (2 exported hidden)
+```
 
-## JSON schema change: blast broken refs
+- **Test-only** symbols (every reference from `*_test.go` documents) are
+  listed with a `(test-only)` marker, not dropped.
+- **Exported** symbols are excluded by default — their consumers may
+  live outside the index — and revealed by `--include-exported` with an
+  `(exported)` marker; the header reports how many were hidden.
+- **Excluded unconditionally**: bare package clauses, `main`/`init`, and
+  Go test-entry functions (`Test*`/`Benchmark*`/`Fuzz*`/`Example*`,
+  including `TestMain`, in `*_test.go` documents) — all runtime-invoked,
+  never statically referenced.
+- **Locals are kept when unreferenced**: an unused local is the strongest
+  dead signal there is — deliberately diverging from `skeleton`, which
+  drops them. Same symbol class, opposite questions, opposite answers.
 
-`scipq blast --json` omits `file` and `line` keys for `broken ref`
-entries (no definition site exists). Parsers written against the
-develop-track builds that emitted `"file": "", "line": 0` must accept a
-missing key. No tagged release shipped the previous shape.
+## Index hygiene: out-of-root documents filtered at load
 
-## Agent skill
+SCIP requires document paths to stay inside the project root; real
+scip-go indexes leak test-compile artifacts under the Go build cache.
+Those documents are now dropped at load time for every verb — the
+predicate is metadata-independent and unconditional: an absolute path,
+or a leading `..` after cleaning, is dispositive on its own. `map`
+surfaces the count as `externalDocsHidden` in JSON and appends
+`(N external docs hidden)` to the header when nonzero; totals, clusters,
+and hotspots all describe the filtered project.
 
-An agent-facing skill ships at `skills/scipq/`: decision policy (when to
-query instead of reading source), agent-UX contract, and per-verb
-reference including worked examples verified against the binary.
-Point a coding agent at the path, or copy it into the agent's skill
-directory.
+On scipq's own self-index, the `.cache/go-build/…` clusters are gone and
+the CI self-index job now validates the filtered index — the dogfood is
+clean by construction.
 
-## map rendering
+## Agent-skill updates
 
-Hub names now handle scip-go symbol shapes found by running scipq on its
-own index: package-level symbols render as their last path segment
-(`exitUsage`, not the backticked package path), and `local N` symbols
-render as `local N` rather than a bare digit.
-
-## CI
-
-- Every run self-indexes the repo with scip-go (pinned tarball,
-  sha256-verified), sanity-checks the index through `scipq map --json`,
-  and publishes `index.scip` as a workflow artifact (30-day retention).
-- Markdown lint on all PRs.
+The scipq skill's decision table routes all five verbs, with per-verb
+reference pages (`reference/verbs/`) carrying JSON schemas, exit-code
+contracts, and worked examples verified against real indexes.
+Agent-instruction rules added: read the error before retrying, and no
+probe loops.
