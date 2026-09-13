@@ -66,9 +66,11 @@ tracks hunk lengths, not just headers.
   dependent), or `broken ref` (referenced but undefined in the index —
   typically deleted by the diff; scoped to the indexed module's symbol
   prefix so external/stdlib references don't flood it).
-- `line` is 1-based. For `broken ref` entries, `file` is `""` and
-  `line` is `0` — the fields are present but empty (no `omitempty`);
-  treat empty `file` as the broken-ref marker.
+- `line` is 1-based. For `broken ref` entries, `file` and `line` are
+  OMITTED from the JSON object (no definition site exists); an absent
+  `file` is the broken-ref marker. Schema change: releases before this
+  emitted `"file": ""` and `"line": 0` instead — parsers written against
+  those releases must accept a missing key.
 - `untested` — no references originate from `*_test.go` files.
 
 ## Exit codes
@@ -99,8 +101,6 @@ $ printf '' | scipq blast --index <fixture> --json
         {
           "symbol": "go github.com/example/animal Deleted#Thing().",
           "short": "Thing",
-          "file": "",
-          "line": 0,
           "reason": "broken ref",
           "untested": true
         }

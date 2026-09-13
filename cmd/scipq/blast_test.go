@@ -750,6 +750,71 @@ func TestRunBlastJSON(t *testing.T) {
 	}
 }
 
+func TestRunBlastJSONBrokenRefOmitsFileLine(t *testing.T) {
+	// Schema note (issue 34): broken refs have no definition site, so
+	// "file" and "line" are OMITTED from the JSON object entirely — an
+	// absent "file" is the broken-ref marker. Touched/dependent entries
+	// must still carry both fields.
+	ri := buildBlastFixtureIndex(t)
+	out, errb := captureWriter(t)
+	swapStdin(t, strings.NewReader(cannedDiff(
+		`diff --git a/animal.go b/animal.go`,
+		`--- a/animal.go`,
+		`+++ b/animal.go`,
+		`@@ -2,1 +3,1 @@`,
+		`+changed`,
+	)))
+
+	code := runWith(t, []string{"blast", "--json"}, ri)
+	if code != exitOK {
+		t.Fatalf("blast exit = %d, want %d", code, exitOK)
+	}
+	if errb.Len() != 0 {
+		t.Errorf("stderr not empty: %q", errb.String())
+	}
+
+	var res BlastResult
+	if err := json.Unmarshal(out.Bytes(), &res); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\n%s", err, out.String())
+	}
+	var broken, touched *ImpactedSymbol
+	for _, g := range res.Groups {
+		for _, s := range g.Symbols {
+			switch {
+			case s.Reason == relationBrokenRef:
+				broken = &s
+			case s.Reason == "touched":
+				touched = &s
+			}
+		}
+	}
+	if broken == nil {
+		t.Fatalf("no broken ref in output:\n%s", out.String())
+	}
+	if touched == nil {
+		t.Fatalf("no touched symbol in output:\n%s", out.String())
+	}
+	if broken.File != "" || broken.Line != 0 {
+		t.Errorf("broken ref File/Line = %q/%d, want zero values", broken.File, broken.Line)
+	}
+	if touched.File == "" || touched.Line == 0 {
+		t.Errorf("touched symbol missing def site: %q/%d", touched.File, touched.Line)
+	}
+	// Key-presence check on the raw JSON: the broken-ref entry must not
+	// carry "file"/"line" keys at all (omitempty drops them); the
+	// touched entry must carry both.
+	raw := out.String()
+	if strings.Contains(raw, `"file": ""`) {
+		t.Errorf("broken ref emitted empty file key (omitempty missing):\n%s", raw)
+	}
+	if strings.Contains(raw, `"line": 0`) {
+		t.Errorf("broken ref emitted zero line key (omitempty missing):\n%s", raw)
+	}
+	if !strings.Contains(raw, `"file": "animal.go"`) {
+		t.Errorf("touched symbol missing file key:\n%s", raw)
+	}
+}
+
 func TestRunBlastEmptyDiff(t *testing.T) {
 	ri := buildBlastFixtureIndex(t)
 	out, errb := captureWriter(t)
