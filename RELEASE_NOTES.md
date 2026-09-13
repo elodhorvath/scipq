@@ -1,3 +1,5 @@
+# What's new in v0.2.0
+
 New in v0.2.0: the `blast` verb, a CLI framework migration, and CI self-indexing.
 
 ## New verb: `blast` — diff impact analysis
