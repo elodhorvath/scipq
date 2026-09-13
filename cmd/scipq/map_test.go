@@ -7,7 +7,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
+
+	scip "github.com/scip-code/scip/bindings/go/scip"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/elodhorvath/scipq/internal/index"
 )
@@ -170,6 +175,202 @@ func TestRunMapHuman(t *testing.T) {
 		if !contains(out.String(), want) {
 			t.Errorf("output missing %q\n--- got ---\n%s", want, out.String())
 		}
+	}
+}
+
+// buildOutOfRootFixtureIndex builds an index with one in-root document and
+// one "../"-escaping build-cache document (def + refs), mirroring the
+// scip-go test-compile leakage from issue #42.
+func buildOutOfRootFixtureIndex(t *testing.T) *index.ReverseIndex {
+	t.Helper()
+	inRoot := "go github.com/example/inroot Thing."
+	cacheSym := "go github.com/example/cache Cached."
+	def := func(sym string, line int32) *scip.Occurrence {
+		return &scip.Occurrence{
+			Range:       []int32{line, 0, 10},
+			Symbol:      sym,
+			SymbolRoles: int32(scip.SymbolRole_Definition),
+		}
+	}
+	ref := func(sym string, line int32) *scip.Occurrence {
+		return &scip.Occurrence{Range: []int32{line, 0, 10}, Symbol: sym}
+	}
+	idx := &scip.Index{
+		Metadata: &scip.Metadata{
+			ToolInfo:    &scip.ToolInfo{Name: "scipq-test", Version: "0.0.0"},
+			ProjectRoot: "file:///synthetic",
+		},
+		Documents: []*scip.Document{
+			{
+				RelativePath: "inroot.go",
+				Occurrences: []*scip.Occurrence{
+					def(inRoot, 1),
+					ref(inRoot, 5),
+				},
+			},
+			{
+				RelativePath: "../../.cache/go-build/08/x.go",
+				Occurrences: []*scip.Occurrence{
+					def(cacheSym, 0),
+					ref(inRoot, 4),
+				},
+			},
+		},
+	}
+	data, err := proto.Marshal(idx)
+	if err != nil {
+		t.Fatalf("marshal out-of-root fixture: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "index.scip")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write out-of-root fixture: %v", err)
+	}
+	ri, err := index.Load(path)
+	if err != nil {
+		t.Fatalf("load out-of-root fixture: %v", err)
+	}
+	return ri
+}
+
+// TestComputeMapOutOfRoot pins the map-level effect of the index-layer
+// filter: the cache directory and file never appear in clusters or
+// hotspots, totals describe the filtered project, and the hidden count is
+// surfaced.
+func TestComputeMapOutOfRoot(t *testing.T) {
+	ri := buildOutOfRootFixtureIndex(t)
+
+	res := computeMap(ri, -1)
+
+	if res.Files != 1 {
+		t.Errorf("Files = %d, want 1 (out-of-root doc excluded)", res.Files)
+	}
+	if res.Symbols != 1 {
+		t.Errorf("Symbols = %d, want 1 (cache symbol excluded)", res.Symbols)
+	}
+	if res.ExternalDocsHidden != 1 {
+		t.Errorf("ExternalDocsHidden = %d, want 1", res.ExternalDocsHidden)
+	}
+	for _, c := range res.Clusters {
+		if contains(c.Dir, ".cache") {
+			t.Errorf("clusters contain cache dir %q", c.Dir)
+		}
+	}
+	for _, h := range res.Hotspots {
+		if contains(h.File, ".cache") {
+			t.Errorf("hotspots contain cache file %q", h.File)
+		}
+	}
+	// The in-root document's own reference is the only hotspot source.
+	if len(res.Hotspots) != 1 || res.Hotspots[0].File != "inroot.go" || res.Hotspots[0].Refs != 1 {
+		t.Errorf("Hotspots = %+v, want [inroot.go (1 refs)]", res.Hotspots)
+	}
+}
+
+// TestRunMapHumanOutOfRoot pins the honesty header: the human output
+// carries the hidden-docs suffix when documents were dropped, and the
+// suffix is absent when none were.
+func TestRunMapHumanOutOfRoot(t *testing.T) {
+	t.Run("suffix present when docs dropped", func(t *testing.T) {
+		ri := buildOutOfRootFixtureIndex(t)
+		out, errb := captureWriter(t)
+
+		code := runWith(t, []string{"map"}, ri)
+		if code != exitOK {
+			t.Fatalf("map exit = %d, want %d", code, exitOK)
+		}
+		if errb.Len() != 0 {
+			t.Errorf("stderr not empty: %q", errb.String())
+		}
+		for _, banned := range []string{"you should", "consider", "recommend"} {
+			if containsFold(out.String(), banned) {
+				t.Errorf("stdout contains banned instruction-like text %q", banned)
+			}
+		}
+		if want := "1 files · 1 symbols (1 external docs hidden)"; !contains(out.String(), want) {
+			t.Errorf("output missing header %q\n--- got ---\n%s", want, out.String())
+		}
+		if contains(out.String(), ".cache") {
+			t.Errorf("output contains cache path\n%s", out.String())
+		}
+	})
+
+	t.Run("suffix absent on conformant fixture", func(t *testing.T) {
+		ri := loadFixtureIndex(t)
+		out, _ := captureWriter(t)
+
+		code := runWith(t, []string{"map"}, ri)
+		if code != exitOK {
+			t.Fatalf("map exit = %d, want %d", code, exitOK)
+		}
+		if contains(out.String(), "external docs hidden") {
+			t.Errorf("header reports hidden docs on conformant index:\n%s", out.String())
+		}
+	})
+}
+
+// TestRunMapJSONOutOfRoot pins the JSON contract: externalDocsHidden
+// round-trips through --json.
+func TestRunMapJSONOutOfRoot(t *testing.T) {
+	ri := buildOutOfRootFixtureIndex(t)
+	out, _ := captureWriter(t)
+
+	code := runWith(t, []string{"map", "--json"}, ri)
+	if code != exitOK {
+		t.Fatalf("map --json exit = %d, want %d", code, exitOK)
+	}
+	var res MapResult
+	if err := json.Unmarshal(out.Bytes(), &res); err != nil {
+		t.Fatalf("decode json: %v\n%s", err, out.String())
+	}
+	if res.ExternalDocsHidden != 1 {
+		t.Errorf("JSON externalDocsHidden = %d, want 1", res.ExternalDocsHidden)
+	}
+	if res.Files != 1 || res.Symbols != 1 {
+		t.Errorf("JSON totals = %d/%d, want 1/1", res.Files, res.Symbols)
+	}
+	if len(res.Clusters) != 1 || res.Clusters[0].Dir != "." {
+		t.Errorf("JSON clusters = %+v, want single \".\" cluster", res.Clusters)
+	}
+}
+
+// TestRunMapAllOutOfRoot pins the pathological empty state: an index whose
+// every document escapes the root yields an empty map with honest totals.
+func TestRunMapAllOutOfRoot(t *testing.T) {
+	cacheSym := "go github.com/example/cache Cached."
+	idx := &scip.Index{
+		Metadata: &scip.Metadata{
+			ToolInfo:    &scip.ToolInfo{Name: "scipq-test", Version: "0.0.0"},
+			ProjectRoot: "file:///synthetic",
+		},
+		Documents: []*scip.Document{{
+			RelativePath: "../../.cache/go-build/08/x.go",
+			Occurrences: []*scip.Occurrence{{
+				Range:       []int32{0, 0, 10},
+				Symbol:      cacheSym,
+				SymbolRoles: int32(scip.SymbolRole_Definition),
+			}},
+		}},
+	}
+	data, err := proto.Marshal(idx)
+	if err != nil {
+		t.Fatalf("marshal all-out-of-root fixture: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "index.scip")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write all-out-of-root fixture: %v", err)
+	}
+	ri, err := index.Load(path)
+	if err != nil {
+		t.Fatalf("load all-out-of-root fixture: %v", err)
+	}
+
+	out, _ := captureWriter(t)
+	code := runWith(t, []string{"map"}, ri)
+	if code != exitOK {
+		t.Fatalf("map exit = %d, want %d", code, exitOK)
+	}
+	if want := "0 files · 0 symbols (1 external docs hidden)"; !contains(out.String(), want) {
+		t.Errorf("output missing honest empty header %q\n--- got ---\n%s", want, out.String())
 	}
 }
 

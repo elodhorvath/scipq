@@ -45,12 +45,16 @@ type Hotspot struct {
 }
 
 // MapResult is the full map output: totals, clusters, hotspots.
+// ExternalDocsHidden reports how many documents the index layer skipped
+// because their relative path escapes the project root — honest accounting
+// of what the totals do not include.
 type MapResult struct {
-	Files     int       `json:"files"`
-	Symbols   int       `json:"symbols"`
-	Clusters  []Cluster `json:"clusters"`
-	Hotspots  []Hotspot `json:"hotspots"`
-	Truncated bool      `json:"truncated"`
+	Files              int       `json:"files"`
+	Symbols            int       `json:"symbols"`
+	ExternalDocsHidden int       `json:"externalDocsHidden"`
+	Clusters           []Cluster `json:"clusters"`
+	Hotspots           []Hotspot `json:"hotspots"`
+	Truncated          bool      `json:"truncated"`
 }
 
 // dirOf extracts the directory portion of a document path; root-level files
@@ -224,17 +228,22 @@ func computeMap(ri *index.ReverseIndex, clusterLimit int) MapResult {
 	}
 
 	return MapResult{
-		Files:     len(files),
-		Symbols:   len(symbols),
-		Clusters:  clusters,
-		Hotspots:  hotspots,
-		Truncated: truncated,
+		Files:              len(files),
+		Symbols:            len(symbols),
+		ExternalDocsHidden: ri.DroppedDocs(),
+		Clusters:           clusters,
+		Hotspots:           hotspots,
+		Truncated:          truncated,
 	}
 }
 
 // renderMapHuman writes the human-readable map to w.
 func renderMapHuman(w *writer, res MapResult) {
-	fmt.Fprintf(w.out, "%d files · %d symbols\n", res.Files, res.Symbols)
+	header := fmt.Sprintf("%d files · %d symbols", res.Files, res.Symbols)
+	if res.ExternalDocsHidden > 0 {
+		header += fmt.Sprintf(" (%d external docs hidden)", res.ExternalDocsHidden)
+	}
+	fmt.Fprintln(w.out, header)
 	for _, c := range res.Clusters {
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "%s/  %d files · %d symbols", c.Dir, c.Files, c.Symbols)

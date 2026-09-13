@@ -120,6 +120,18 @@ Flags:
 - `--json` — machine-readable equivalent (clusters, hubs, hotspots, totals).
 - `--index <path>` — index location (default `./index.scip`).
 
+Documents whose relative path escapes the indexed project root (e.g.
+scip-go test-compile artifacts under the Go build cache) are excluded at
+load time for every verb. When any were dropped, the `map` header notes
+the count:
+
+```bash
+$ scipq map
+14 files · 368 symbols (3 external docs hidden)
+```
+
+`--json` reports the same count as `externalDocsHidden`.
+
 ### `callers` — exact reference sites for a symbol
 
 Who uses this symbol, where, and via what relation. Resolve by full symbol

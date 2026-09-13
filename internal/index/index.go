@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"slices"
 	"strings"
 
@@ -63,6 +64,10 @@ type ReverseIndex struct {
 	implsOf  map[string][]string
 	files    map[string]struct{}
 	fileRefs map[string]int
+	// droppedDocs counts documents skipped at load time because their
+	// relative path escapes the project root (see escapesRoot). Verbs
+	// surface the count so filtered data is never silently lost.
+	droppedDocs int
 }
 
 // Refs returns every reference site for symbol. The result is a copy;
@@ -141,6 +146,13 @@ func (r *ReverseIndex) FileRefCounts() map[string]int {
 	return out
 }
 
+// DroppedDocs returns the number of documents skipped at load time because
+// their relative path escapes the project root. Verbs surface the count so
+// the filtering stays honest about what was excluded.
+func (r *ReverseIndex) DroppedDocs() int {
+	return r.droppedDocs
+}
+
 // RefsAll returns the full reference map: symbol → reference sites. The
 // returned map is a copy; mutating it does not affect the index.
 func (r *ReverseIndex) RefsAll() map[string][]Site {
@@ -216,10 +228,36 @@ func Load(path string) (*ReverseIndex, error) {
 	return ri, nil
 }
 
+// escapesRoot reports whether a document's relative path escapes the
+// project root. SCIP defines RelativePath as relative to project_root and
+// forbids escaping it, so a path that is absolute or still carries a
+// leading ".." after cleaning is indexer leakage (e.g. scip-go test-compile
+// artifacts under the Go build cache), not project content.
+//
+// The test is metadata-independent: it never reads metadata.project_root,
+// so behavior is identical whether or not the index records a root. One
+// code path, always on.
+//
+// Known limitation (documented, not solved): paths that escape semantically
+// but not syntactically — clean relative paths written against a different
+// root than project_root claims — are undetectable without trusting the
+// metadata, which this predicate deliberately does not.
+func escapesRoot(rel string) bool {
+	if path.IsAbs(rel) {
+		return true
+	}
+	clean := path.Clean(rel)
+	return clean == ".." || strings.HasPrefix(clean, "../")
+}
+
 // addDocument records reference and definition sites for every occurrence in
 // the document, and relationship edges for the symbols it defines.
 func (r *ReverseIndex) addDocument(doc *scip.Document) {
 	path := doc.GetRelativePath()
+	if escapesRoot(path) {
+		r.droppedDocs++
+		return
+	}
 	r.files[path] = struct{}{}
 	for _, occ := range doc.GetOccurrences() {
 		sym := occ.GetSymbol()
