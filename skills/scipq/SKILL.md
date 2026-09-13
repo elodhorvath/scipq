@@ -52,6 +52,12 @@ These behaviors are pinned and safe to build on:
   in any position, before or after the verb.
 - **Per-verb help**: `scipq <verb> -h`.
 - **Shell completions**: `scipq completion bash|zsh|fish|pwsh`.
+- **Out-of-root documents are filtered at load.** Documents whose relative
+  path escapes the project root (absolute, or a leading `..` after
+  cleaning) are skipped for every verb — they are indexer leakage (e.g.
+  scip-go build-cache artifacts), not project content. `map` surfaces the
+  dropped count as `externalDocsHidden` in JSON and `(N external docs
+  hidden)` in the human header; other verbs simply exclude the noise.
 
 ## Quick start
 
