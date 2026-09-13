@@ -61,6 +61,14 @@ When the user says "work on issue N" (or similar):
 - Build: `go build ./...` must pass. Test: `go test ./...` must pass before any PR.
 - Formatting: `gofmt` (no config). Lint: `go vet ./...` clean.
 
+## Working style
+
+- **No probe loops.** When a command, test, or read fails to produce new
+  information, stop and change approach — check the call path or re-read the
+  requirement instead of re-running the same probe. Never re-read a file
+  already read this session; never repeat a query that just returned the same
+  answer. If two attempts don't converge, state the blocker and ask.
+
 ## Code conventions
 
 - **Error handling:** wrap with `fmt.Errorf("verb: %w", err)`; never discard errors; never panic outside init-time invariant checks.
