@@ -95,9 +95,6 @@ scipq completion fish
 scipq completion pwsh
 ```
 
-`dead` is not implemented yet — it is hidden from help and completion
-until it lands.
-
 ### `map` — repo orientation
 
 One-screen answer to "what is this codebase?": per-directory clusters with
@@ -227,6 +224,60 @@ Flags:
 - `--json` — machine-readable equivalent (`file`, `symbols[]` with
   `symbol`, `name`, `kind`, 1-based `line`, `exported`).
 - `--index <path>` — index location (default `./index.scip`).
+
+### `dead` — dead-code candidates
+
+What's defined but never referenced? Every definition with zero reference
+sites anywhere in the index, grouped by directory with counts. Symbols
+whose every reference comes from a `*_test.go` document are listed with a
+`(test-only)` marker, not dropped. Exported symbols are excluded by
+default — their consumers may live outside the index — and revealed by
+`--include-exported` with an `(exported)` marker.
+
+```bash
+$ scipq dead
+5 dead-code candidates · 2 groups (2 exported hidden)
+./
+  deadMethod  animal.go:5
+  testOnlyHelper  animal.go:11  (test-only)
+  local 0  locals.go:2
+  init  main.go:6
+util/
+  orphan  util/orphan.go:1
+```
+
+Classification rules (each a documented heuristic, kept minimal — false
+positives are worse than an honest noisy list):
+
+- **Dead**: defined, zero references anywhere in the index.
+- **Test-only**: referenced, but every reference originates from a
+  `*_test.go` document — listed with the marker, not dropped.
+- **Excluded unconditionally**: bare package clauses, and package-level
+  `main`/`init` entry points (invoked by the runtime, never referenced in
+  the index). A *method* named `init` or `main` is not hidden — it
+  classifies normally.
+- **Excluded by default**: exported symbols (case-based convention,
+  shared by Go and C# — a heuristic, not a language service). Their refs
+  may exist outside the index, so "zero refs in-index" cannot distinguish
+  dead from merely-unseen; the default view stays high-signal and
+  `--include-exported` reveals them with the `(exported)` marker. The
+  header reports how many were hidden.
+- **Locals are kept only when unreferenced**: an unreferenced `local N`
+  is the strongest dead signal there is (an unused local); a referenced
+  local is filtered — either live or vacuously test-only. This
+  deliberately diverges from `skeleton`, which drops locals — same
+  symbol class, opposite questions.
+
+Flags:
+
+- `--include-exported` — also list exported symbols. The opt-in view
+  reports "exported and unreferenced in-index," not "dead."
+- `--json` — machine-readable equivalent (`total`, `exportedHidden`,
+  `groups[]` with `dir`, `count`, and `symbols[]` carrying `symbol`,
+  `name`, `kind`, `file`, 1-based `line`, `testOnly`, `exported`).
+- `--index <path>` — index location (default `./index.scip`).
+
+No candidates → `no dead symbols`, exit 0. Missing index exits 2.
 
 ## Verbs
 
