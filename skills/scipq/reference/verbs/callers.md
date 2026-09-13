@@ -58,15 +58,19 @@ All of these resolve to the same symbol:
 
 ## Worked example
 
+Run against the repo's committed `testdata/index.scip`:
+
 ```bash
-$ scipq callers Animal#Speak
-go github.com/example/animal Animal#Speak().  (4 sites)
+$ scipq callers Animal#Speak --index testdata/index.scip
+go github.com/example/animal Animal#Speak().  (3 sites)
 services/handler.go:5  call
-services/handler.go:6  implements (via Dog#Speak())
 services/zoo.go:11     call
 services/zoo.go:15     call
 ```
 
-Reading: three direct call sites plus one reference through the
-implements chain — `handler.go:6` calls `Dog#Speak()`, which implements
-`Animal#Speak()`. Changing `Animal#Speak()`'s contract affects that site.
+Reading: three direct call sites. The `implements (via <symbol>)`
+relation appears when a referencing site goes through an implementor —
+e.g. with a `Dog#Speak()` reference in the index (see
+`buildTransitiveFixtureIndex` in `cmd/scipq/callers_test.go`), the same
+query reports `services/handler.go:6  implements (via Dog#Speak())`.
+Changing `Animal#Speak()`'s contract affects every listed site.

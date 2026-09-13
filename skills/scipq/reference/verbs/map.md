@@ -2,7 +2,8 @@
 
 One-screen answer to "what is this codebase?": per-directory clusters with
 hub symbols ranked by reference in-degree, overall totals, and repo-wide
-hotspots. Output stays under ~800 tokens for a 300-file repo.
+hotspots. Output is bounded and token-budgeted (approximate: under
+~800 tokens for a 300-file repo).
 
 ## Invocation
 

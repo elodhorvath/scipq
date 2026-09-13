@@ -66,7 +66,9 @@ tracks hunk lengths, not just headers.
   dependent), or `broken ref` (referenced but undefined in the index —
   typically deleted by the diff; scoped to the indexed module's symbol
   prefix so external/stdlib references don't flood it).
-- `line` is 1-based; `file`/`line` are absent for broken refs.
+- `line` is 1-based. For `broken ref` entries, `file` is `""` and
+  `line` is `0` — the fields are present but empty (no `omitempty`);
+  treat empty `file` as the broken-ref marker.
 - `untested` — no references originate from `*_test.go` files.
 
 ## Exit codes
@@ -77,18 +79,42 @@ tracks hunk lengths, not just headers.
 
 ## Worked example
 
+The committed `testdata/index.scip` has no undefined symbols, so the
+broken-ref channel needs a fixture with one. Reproduce the example:
+
+1. Build a tiny index with one defined symbol and one reference to an
+   undefined symbol (see `buildBlastFixtureIndex` in
+   `cmd/scipq/blast_test.go` for the recipe — a `Deleted#Thing` ref with
+   no def).
+2. Pipe an empty diff:
+
 ```bash
-$ git diff -U0 | scipq blast
-1 touched · 2 groups
-./
-  Speak  touched
-  Speak  dependent  (untested)
-services/
-  Thing  broken ref  (untested)
+$ printf '' | scipq blast --index <fixture> --json
+{
+  "touched": 0,
+  "groups": [
+    {
+      "dir": "services",
+      "symbols": [
+        {
+          "symbol": "go github.com/example/animal Deleted#Thing().",
+          "short": "Thing",
+          "file": "",
+          "line": 0,
+          "reason": "broken ref",
+          "untested": true
+        }
+      ]
+    }
+  ]
+}
 ```
 
-Reading: one symbol's definition line changed; two symbols depend on it
-transitively (one via an implements chain, one via a referencing file);
-one referenced symbol has no definition in the index — likely deleted by
-this diff, and its callers are broken. The untested flags mark symbols
+Reading: no symbol's definition line changed, but `Deleted#Thing` is
+referenced with no definition in the index — likely deleted by this
+diff, and its callers are broken. The `untested` flag marks symbols
 with no test coverage referencing them.
+
+For the touched/dependent path, the unit tests in
+`cmd/scipq/blast_test.go` exercise the full matrix against synthetic
+indexes.

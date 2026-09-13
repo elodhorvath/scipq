@@ -1,12 +1,12 @@
 ---
 name: scipq
-description: Answer code-graph questions (who uses X, what does this package do, what breaks if I change X) from a SCIP index instead of reading source files. Use when exploring unfamiliar code, assessing change impact, or finding dead code — before opening any source file.
+description: Answer code-graph questions (who uses X, what does this package do, what breaks if I change X) from a SCIP index instead of reading source files. Use when exploring unfamiliar code or assessing change impact — before opening any source file.
 ---
 
 # scipq — code-graph queries over a SCIP index
 
 `scipq` answers structural questions about a codebase from its SCIP index
-(`index.scip`), deterministically, in milliseconds, with no LLM and no
+(`index.scip`), deterministically and fast, with no LLM and no
 telemetry. It replaces the explore-by-grep-and-read loop: one query returns
 the graph answer that would otherwise cost several file reads.
 
