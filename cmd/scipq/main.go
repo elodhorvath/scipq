@@ -82,7 +82,11 @@ func main() {
 
 // runError maps a cli.Command.Run error return to the process exit code:
 // nil is success, our exitError carries its code, anything else is a
-// usage error.
+// usage error. Non-exitError errors are printed first: framework-built
+// subcommands (the completion tree) don't carry our OnUsageError, and
+// with the no-op ExitErrHandler nothing else prints their errors —
+// without this print they would exit 1 silently (issue #29). Single-
+// print is safe while ExitErrHandler stays a no-op.
 func runError(err error) int {
 	if err == nil {
 		return exitOK
@@ -91,6 +95,7 @@ func runError(err error) int {
 	if errors.As(err, &ee) {
 		return ee.code
 	}
+	fmt.Fprintf(stderr, "scipq: %v\n", err)
 	return exitUsage
 }
 

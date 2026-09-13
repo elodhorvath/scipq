@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"testing"
 
 	"github.com/elodhorvath/scipq/internal/index"
@@ -26,20 +25,15 @@ func loadFixtureIndex(t *testing.T) *index.ReverseIndex {
 // runWith runs a full scipq invocation against a stub index loader that
 // returns ri regardless of the --index value. It is the entry-point seam
 // for verb tests: the same path main() takes, with index loading stubbed.
+// Error mapping goes through runError so tests exercise the same
+// print-and-map contract as production (issue #29).
 func runWith(t *testing.T, argv []string, ri *index.ReverseIndex) int {
 	t.Helper()
 	cmd := newRootCommand(func(string) (*index.ReverseIndex, int) {
 		return ri, exitOK
 	})
 	err := cmd.Run(context.Background(), append([]string{"scipq"}, argv...))
-	if err == nil {
-		return exitOK
-	}
-	var ee *exitError
-	if errors.As(err, &ee) {
-		return ee.code
-	}
-	return exitUsage
+	return runError(err)
 }
 
 // captureWriter redirects the process writers to buffers for the duration

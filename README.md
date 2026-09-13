@@ -68,7 +68,8 @@ api/handlers/profile.go:41           call (interface dispatch)
 
 Every command exits 0 on success, 1 on usage error, 2 on missing index.
 Exit 2 applies to otherwise well-formed invocations — argument and flag
-errors are reported first (exit 1).
+errors are reported first (exit 1). All errors print a `scipq:`-prefixed
+diagnostic on stderr; nothing fails silently.
 `--json` on any verb for machine-readable output.
 
 ### Global flags

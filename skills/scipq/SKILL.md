@@ -46,7 +46,8 @@ These behaviors are pinned and safe to build on:
   parse JSON, never human output.
 - **Exit codes**: `0` success, `1` usage error (bad args/flags, unknown
   verb), `2` missing index. Usage errors are reported before missing-index
-  errors.
+  errors. Every failure prints a `scipq:`-prefixed diagnostic on stderr —
+  a nonzero exit is never silent.
 - **`--index <path>` and `--json` are persistent root flags** — they parse
   in any position, before or after the verb.
 - **Per-verb help**: `scipq <verb> -h`.
