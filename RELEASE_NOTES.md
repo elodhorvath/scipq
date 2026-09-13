@@ -38,8 +38,8 @@ Command routing moved to urfave/cli v3:
   invocations.
 - Every failure prints a `scipq:`-prefixed diagnostic on stderr; a
   nonzero exit is never silent.
-- Single-dash `-json` is no longer accepted; `--json` is the documented
-  form.
+- `--flag` is the documented form; the framework also tolerates the
+  single-dash spelling (`-json`).
 
 ## JSON schema change: blast broken refs
 
