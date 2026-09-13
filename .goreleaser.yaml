@@ -47,6 +47,7 @@ release:
   header: |
     ## scipq {{ .Tag }}
 
-    **Deterministic code-graph queries over any SCIP index.** No LLM, no telemetry.
+    Deterministic code-graph queries over any SCIP index — plain data out,
+    single static binary, runs fully offline.
 
-    Install: `go install github.com/elodhorvath/scipq@{{ .Tag }}`
+    Install: `go install github.com/elodhorvath/scipq/cmd/scipq@{{ .Tag }}`

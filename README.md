@@ -26,8 +26,8 @@ layer over it. `scipq` fills that gap.
 ## Install
 
 ```bash
-# Go 1.22+
-go install github.com/elodhorvath/scipq@latest
+# Go 1.25+
+go install github.com/elodhorvath/scipq/cmd/scipq@latest
 ```
 
 Prebuilt binaries (macOS arm64/amd64, Linux amd64/arm64, Windows amd64) from
@@ -50,14 +50,16 @@ scip-dotnet index MySolution.sln --output index.scip
 Then commit or regenerate `index.scip` per your workflow (git hook, CI, or
 pre-commit for local dev).
 
+CI note: this repo's own CI self-indexes scipq with scip-go on every run and
+publishes `index.scip` as a workflow artifact (30-day retention) — see the
+`self-index` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
 ## Usage
 
 ```bash
-scipq map                   # repo orientation: dir clusters, hub symbols, hotspots (token-budgeted)
-scipq callers <symbol>      # exact reference sites (file:line), transitive via implements edges
-scipq blast [--base <ref>]  # diff → touched symbols → transitive dependents
-scipq skeleton <file>       # public API surface: defs + signatures, no bodies
-scipq dead                  # defined-but-never-referenced symbols (dead-code candidates)
+git diff -U0 | scipq blast   # diff → touched symbols → transitive dependents
+scipq skeleton <file>        # public API surface: defs + signatures, no bodies
+scipq dead                   # defined-but-never-referenced symbols (dead-code candidates)
 ```
 
 ### Example
@@ -69,7 +71,32 @@ api/handlers/profile.go:41           call (interface dispatch)
 ```
 
 Every command exits 0 on success, 1 on usage error, 2 on missing index.
+Exit 2 applies to otherwise well-formed invocations — argument and flag
+errors are reported first (exit 1). All errors print a `scipq:`-prefixed
+diagnostic on stderr; nothing fails silently.
 `--json` on any verb for machine-readable output.
+
+### Global flags
+
+`--index <path>` and `--json` are persistent root flags: they parse in
+any position, before or after the verb (`scipq --index x map` and
+`scipq map --index x` are equivalent). Every verb also supports `-h`
+for per-verb help (`scipq map -h`).
+
+### Shell completions
+
+```bash
+# bash
+source <(scipq completion bash)
+# zsh
+source <(scipq completion zsh)
+# fish / pwsh (PowerShell)
+scipq completion fish
+scipq completion pwsh
+```
+
+`skeleton` and `dead` are not implemented yet — they are hidden from
+help and completion until they land.
 
 ### `map` — repo orientation
 
@@ -122,6 +149,49 @@ Flags:
   `file`, 1-based `line`, `relation`).
 - `--index <path>` — index location (default `./index.scip`).
 
+### `blast` — diff impact analysis
+
+What can my change break? Reads a standard unified diff from stdin (no
+git integration — you produce the diff), maps changed lines to symbols
+defined on them, and walks transitive dependents: symbols defined in
+files that reference the change, plus implements chains. References to
+module-internal symbols with no definition in the index are surfaced as
+`broken ref` — the deletion channel. External references (stdlib,
+third-party — symbols outside the indexed module's prefix) are excluded
+so the channel stays signal, not noise. Symbols with no `*_test.go`
+references are flagged `untested`.
+
+```bash
+$ git diff -U0 | scipq blast
+1 touched · 2 groups
+./
+  Speak  touched
+  Speak  dependent  (untested)
+services/
+  Thing  broken ref  (untested)
+```
+
+The index should reflect the post-diff state of the code (regenerate
+`index.scip` after your edits) so touched-symbol containment and the
+broken-ref pass line up.
+
+Flags:
+
+- `--depth N` — transitive dependent depth (default 2). Implements
+  chains are transitive and always fully expanded; depth cuts
+  file-dependency hops.
+- `--json` — machine-readable equivalent (`touched`, `groups[]` with
+  `dir` and `symbols[]` carrying `symbol`, `short`, `file`, 1-based
+  `line`, `reason` (`touched` / `dependent` / `broken ref`), and
+  `untested`).
+- `--index <path>` — index location (default `./index.scip`).
+
+Empty diff → exit 0; no *touched* symbols, though module-internal
+broken refs still surface (they are breaks regardless of the diff). A
+terminal stdin (no pipe) is a usage error (exit 1) — note `/dev/null`
+redirect counts as a terminal (char-device check), so CI scripts should
+pipe explicitly. Missing index exits 2.
+
 ## Verbs
 
 | Verb | Question it answers |
@@ -131,6 +201,18 @@ Flags:
 | `blast` | What can my change break? |
 | `skeleton` | What's the API surface of this file? |
 | `dead` | What's defined but never referenced? |
+
+## Agent skill
+
+An agent-facing skill ships in this repo at [`skills/scipq/`](skills/scipq/SKILL.md):
+a decision policy (when to query instead of reading source), the agent-UX
+contract (`--json` data-only stdout, exit codes, persistent flags), and
+per-verb deep reference. Point your coding agent at that path — or copy it
+into your agent's skill directory; the format is agent-agnostic
+([AgentSkills](https://agentskills.io) frontmatter).
+
+The skill is maintained with every user-visible change (same PR as the
+change), so it never drifts from the binary.
 
 ## Design principles
 

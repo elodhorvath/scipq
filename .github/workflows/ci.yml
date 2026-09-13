@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
   build-test:
@@ -18,6 +18,13 @@ jobs:
 
       - name: Verify formatting
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+      - name: Lint markdown
+        uses: DavidAnson/markdownlint-cli2-action@v20
+        with:
+          globs: |
+            **/*.md
+            !node_modules/**
 
       - name: Vet
         run: go vet ./...
@@ -44,10 +51,18 @@ jobs:
       - name: Smoke — missing index exits 2
         run: |
           set +e
-          ./scipq map /nonexistent
+          ./scipq map --index /nonexistent/index.scip
           code=$?
           set -e
           test "$code" -eq 2 || (echo "expected exit 2, got $code" && exit 1)
+
+      - name: Smoke — arg violations precede missing index (exit 1)
+        run: |
+          set +e
+          ./scipq map extra --index /nonexistent/index.scip
+          code=$?
+          set -e
+          test "$code" -eq 1 || (echo "expected exit 1, got $code" && exit 1)
 
       - name: Smoke — callers on committed fixture
         run: |
@@ -70,3 +85,83 @@ jobs:
       - name: Smoke — callers --json is valid JSON
         run: |
           ./scipq callers Helper --index testdata/index.scip --json | python3 -m json.tool > /dev/null
+
+      - name: Smoke — blast on synthetic diff
+        run: |
+          set +e
+          printf 'diff --git a/animal.go b/animal.go\n--- a/animal.go\n+++ b/animal.go\n@@ -2,1 +3,1 @@\n+changed\n' | ./scipq blast --index testdata/index.scip > /tmp/blast.out 2>/tmp/blast.err
+          code=$?
+          set -e
+          test "$code" -eq 0 || (echo "expected exit 0, got $code" && exit 1)
+          grep -q "1 touched" /tmp/blast.out || (echo "missing touched count" && exit 1)
+          grep -q "Speak" /tmp/blast.out || (echo "missing touched symbol" && exit 1)
+
+      - name: Smoke — blast empty diff exits 0
+        run: |
+          set +e
+          printf '' | ./scipq blast --index testdata/index.scip > /tmp/blastempty.out 2>/dev/null
+          code=$?
+          set -e
+          test "$code" -eq 0 || (echo "expected exit 0, got $code" && exit 1)
+
+      - name: Smoke — blast TTY stdin exits 1
+        run: |
+          set +e
+          ./scipq blast --index testdata/index.scip < /dev/null
+          code=$?
+          set -e
+          test "$code" -eq 1 || (echo "expected exit 1, got $code" && exit 1)
+
+  # Self-index (issue #11): dogfood — index this repo with scip-go and
+  # publish index.scip as a build artifact. Info-only: failure here does
+  # not block merge until the job has proven stable.
+  self-index:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install scip-go v0.2.7
+        run: |
+          # Download under the asset's real filename: the committed checksum
+          # file lists that name, and sha256sum -c resolves it relative to cwd.
+          curl -fsSL -o /tmp/scip-go-linux-amd64.tar.gz \
+            https://github.com/scip-code/scip-go/releases/download/v0.2.7/scip-go-linux-amd64.tar.gz
+          # Tamper check (issue #39): verify against the checksum recorded
+          # from the release's .sha256 sidecar, independently confirmed.
+          cd /tmp && sha256sum -c "$GITHUB_WORKSPACE/.github/workflows/scip-go-v0.2.7-linux-amd64.sha256"
+          tar -xzf /tmp/scip-go-linux-amd64.tar.gz -C /usr/local/bin scip-go
+          scip-go --version
+
+      - name: Index this repo
+        run: scip-go index ./... --output index.scip
+
+      - name: Index sanity — size and symbol count
+        run: |
+          ls -lh index.scip
+          go run ./cmd/scipq map --index index.scip --json > /tmp/selfmap.json
+          python3 - <<'EOF'
+          import json
+          with open("/tmp/selfmap.json") as f:
+              m = json.load(f)
+          print(f"self-index: {m['files']} files, {m['symbols']} symbols")
+          assert m["files"] > 0, "self-index produced no files"
+          assert m["symbols"] > 0, "self-index produced no symbols"
+          EOF
+
+      - name: Dogfood — scipq map on its own index
+        run: go run ./cmd/scipq map --index index.scip
+
+      - name: Upload index artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: index.scip
+          path: index.scip
+          retention-days: 30
+          if-no-files-found: error

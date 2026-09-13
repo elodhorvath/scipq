@@ -241,9 +241,9 @@ func TestRunCallersHuman(t *testing.T) {
 	ri := buildTransitiveFixtureIndex(t)
 	out, errb := captureWriter(t)
 
-	code := runCallers([]string{"Animal#Speak"}, ri, false)
+	code := runWith(t, []string{"callers", "Animal#Speak"}, ri)
 	if code != exitOK {
-		t.Fatalf("runCallers exit = %d, want %d", code, exitOK)
+		t.Fatalf("callers exit = %d, want %d", code, exitOK)
 	}
 	if errb.Len() != 0 {
 		t.Errorf("stderr not empty: %q", errb.String())
@@ -271,9 +271,9 @@ func TestRunCallersJSON(t *testing.T) {
 	ri := buildTransitiveFixtureIndex(t)
 	out, errb := captureWriter(t)
 
-	code := runCallers([]string{"Animal#Speak", "--json"}, ri, true)
+	code := runWith(t, []string{"callers", "Animal#Speak", "--json"}, ri)
 	if code != exitOK {
-		t.Fatalf("runCallers exit = %d, want %d", code, exitOK)
+		t.Fatalf("callers exit = %d, want %d", code, exitOK)
 	}
 	if errb.Len() != 0 {
 		t.Errorf("stderr not empty: %q", errb.String())
@@ -307,7 +307,7 @@ func TestRunCallersAmbiguous(t *testing.T) {
 	ri := buildCallersFixtureIndex(t)
 	_, errb := captureWriter(t)
 
-	code := runCallers([]string{"Helper"}, ri, false)
+	code := runWith(t, []string{"callers", "Helper"}, ri)
 	if code != exitUsage {
 		t.Errorf("exit = %d, want %d", code, exitUsage)
 	}
@@ -327,7 +327,7 @@ func TestRunCallersUnknown(t *testing.T) {
 	ri := loadFixtureIndex(t)
 	_, errb := captureWriter(t)
 
-	code := runCallers([]string{"Nonexistent"}, ri, false)
+	code := runWith(t, []string{"callers", "Nonexistent"}, ri)
 	if code != exitUsage {
 		t.Errorf("exit = %d, want %d", code, exitUsage)
 	}
@@ -365,7 +365,7 @@ func TestRunCallersArgHandling(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, errb := captureWriter(t)
-			code := runCallers(tt.args, ri, false)
+			code := runWith(t, append([]string{"callers"}, tt.args...), ri)
 			if code != exitUsage {
 				t.Errorf("exit = %d, want %d", code, exitUsage)
 			}
@@ -421,11 +421,12 @@ func buildCallersFixtureIndex(t *testing.T) *index.ReverseIndex {
 }
 
 func TestRunCallersJSONFlagStripped(t *testing.T) {
-	// --json must not be treated as the symbol argument.
+	// --json is a persistent root flag: it must not be treated as the
+	// symbol argument, and must reach the verb in any position.
 	ri := loadFixtureIndex(t)
 	out, _ := captureWriter(t)
 
-	code := runCallers([]string{"--json", "Helper"}, ri, true)
+	code := runWith(t, []string{"callers", "--json", "Helper"}, ri)
 	if code != exitOK {
 		t.Fatalf("exit = %d, want %d", code, exitOK)
 	}
