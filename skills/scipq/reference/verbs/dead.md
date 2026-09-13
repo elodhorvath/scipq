@@ -41,10 +41,20 @@ worse than an honest noisy list.
    `(exported)` marker and reports "exported and unreferenced in-index,"
    not "dead." The header reports how many were hidden
    (`exportedHidden` in JSON).
-5. **Locals are kept**: an unreferenced `local N` is the strongest dead
-   signal there is (an unused local). This deliberately diverges from
-   `skeleton`, which drops locals — same symbol class, opposite
+5. **Locals are kept only when unreferenced**: an unreferenced `local N`
+   is the strongest dead signal there is (an unused local). A referenced
+   local is filtered — either live (non-test refs) or vacuously test-only
+   (its uses are definitionally test-side). This deliberately diverges
+   from `skeleton`, which drops locals — same symbol class, opposite
    questions, opposite answers.
+
+Known benign class in the `--include-exported` view: interface-
+satisfaction methods (`Error`, `String`) are consumed dynamically
+through the interface, so they carry zero static refs and surface as
+`(exported)` rows. The verb's first real-index run demonstrated this
+inside scipq itself: `exitError.Error()` (main.go:38) is the only row
+the flag view adds over the default view — consumed via the `error`
+interface, alive, and honestly labeled.
 
 Residual limitation (documented like `blast`'s module-prefix note): the
 exported heuristic's failure direction is the safe one — a

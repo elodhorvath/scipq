@@ -262,9 +262,11 @@ positives are worse than an honest noisy list):
   dead from merely-unseen; the default view stays high-signal and
   `--include-exported` reveals them with the `(exported)` marker. The
   header reports how many were hidden.
-- **Locals are kept**: an unreferenced `local N` is the strongest dead
-  signal there is (an unused local). This deliberately diverges from
-  `skeleton`, which drops locals — same symbol class, opposite questions.
+- **Locals are kept only when unreferenced**: an unreferenced `local N`
+  is the strongest dead signal there is (an unused local); a referenced
+  local is filtered — either live or vacuously test-only. This
+  deliberately diverges from `skeleton`, which drops locals — same
+  symbol class, opposite questions.
 
 Flags:
 

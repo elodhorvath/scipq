@@ -59,7 +59,10 @@ var (
 //	                 + bare package clause (excluded)
 //	services/zoo.go  refs only
 //	animal_test.go   refs only (drives the test-only classifications)
-//	                 + a referenced local (filtered — vacuously test-only)
+//	                 + a referenced local, def AND ref planted here (the
+//	                 def makes the referenced-locals filter load-bearing:
+//	                 without it the symbol enters computeDead's DefsAll
+//	                 walk and must be filtered)
 func buildDeadFixtureIndex(t *testing.T) *index.ReverseIndex {
 	t.Helper()
 	def := func(sym string, line int32) *scip.Occurrence {
@@ -128,6 +131,12 @@ func buildDeadFixtureIndex(t *testing.T) *index.ReverseIndex {
 					ref(deadAnimalSpeak, 2),
 					ref(testOnlyExportSym, 4),
 					ref(testOnlyHelperSym, 6),
+					// Referenced local: def AND ref in a test file. The def
+					// is what makes the referenced-locals filter load-bearing
+					// — computeDead walks DefsAll(), so a ref-only symbol
+					// never enters the loop and the filter assertion would
+					// be vacuous (PR #48 review round 2).
+					def(deadTestLocalSym, 7),
 					ref(deadTestLocalSym, 8),
 				},
 			},
