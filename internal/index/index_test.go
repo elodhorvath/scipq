@@ -208,6 +208,22 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
+	t.Run("defsAll mirrors defs", func(t *testing.T) {
+		all := ri.DefsAll()
+		if len(all) != 5 {
+			t.Fatalf("DefsAll() has %d symbols, want 5", len(all))
+		}
+		// Spot-check one symbol's sites and the copy semantics.
+		got := all["go github.com/example/animal Animal#Speak()."]
+		if len(got) != 1 || got[0] != (Site{File: "animal.go", Line: 2}) {
+			t.Errorf("DefsAll()[Animal#Speak] = %v, want [{animal.go 2}]", got)
+		}
+		got[0].File = "mutated.go"
+		if ri.Defs("go github.com/example/animal Animal#Speak().")[0].File != "animal.go" {
+			t.Errorf("DefsAll result not copied: index mutated via returned map")
+		}
+	})
+
 	t.Run("returned slices are copies", func(t *testing.T) {
 		sites := ri.Defs("go github.com/example/animal Animal#Speak().")
 		sites[0].File = "mutated.go"

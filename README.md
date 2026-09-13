@@ -53,11 +53,9 @@ pre-commit for local dev).
 ## Usage
 
 ```bash
-scipq map                   # repo orientation: dir clusters, hub symbols, hotspots (token-budgeted)
-scipq callers <symbol>      # exact reference sites (file:line), transitive via implements edges
-scipq blast [--base <ref>]  # diff → touched symbols → transitive dependents
-scipq skeleton <file>       # public API surface: defs + signatures, no bodies
-scipq dead                  # defined-but-never-referenced symbols (dead-code candidates)
+git diff -U0 | scipq blast   # diff → touched symbols → transitive dependents
+scipq skeleton <file>        # public API surface: defs + signatures, no bodies
+scipq dead                   # defined-but-never-referenced symbols (dead-code candidates)
 ```
 
 ### Example
@@ -92,8 +90,8 @@ scipq completion fish
 scipq completion pwsh
 ```
 
-`blast`, `skeleton`, and `dead` are not implemented yet — they are
-hidden from help and completion until they land.
+`skeleton` and `dead` are not implemented yet — they are hidden from
+help and completion until they land.
 
 ### `map` — repo orientation
 
@@ -145,6 +143,49 @@ Flags:
 - `--json` — machine-readable equivalent (`symbol`, `sites[]` with
   `file`, 1-based `line`, `relation`).
 - `--index <path>` — index location (default `./index.scip`).
+
+### `blast` — diff impact analysis
+
+What can my change break? Reads a standard unified diff from stdin (no
+git integration — you produce the diff), maps changed lines to symbols
+defined on them, and walks transitive dependents: symbols defined in
+files that reference the change, plus implements chains. References to
+module-internal symbols with no definition in the index are surfaced as
+`broken ref` — the deletion channel. External references (stdlib,
+third-party — symbols outside the indexed module's prefix) are excluded
+so the channel stays signal, not noise. Symbols with no `*_test.go`
+references are flagged `untested`.
+
+```bash
+$ git diff -U0 | scipq blast
+1 touched · 2 groups
+./
+  Speak  touched
+  Speak  dependent  (untested)
+services/
+  Thing  broken ref  (untested)
+```
+
+The index should reflect the post-diff state of the code (regenerate
+`index.scip` after your edits) so touched-symbol containment and the
+broken-ref pass line up.
+
+Flags:
+
+- `--depth N` — transitive dependent depth (default 2). Implements
+  chains are transitive and always fully expanded; depth cuts
+  file-dependency hops.
+- `--json` — machine-readable equivalent (`touched`, `groups[]` with
+  `dir` and `symbols[]` carrying `symbol`, `short`, `file`, 1-based
+  `line`, `reason` (`touched` / `dependent` / `broken ref`), and
+  `untested`).
+- `--index <path>` — index location (default `./index.scip`).
+
+Empty diff → exit 0; no *touched* symbols, though module-internal
+broken refs still surface (they are breaks regardless of the diff). A
+terminal stdin (no pipe) is a usage error (exit 1) — note `/dev/null`
+redirect counts as a terminal (char-device check), so CI scripts should
+pipe explicitly. Missing index exits 2.
 
 ## Verbs
 
