@@ -32,6 +32,17 @@ worse than an honest noisy list.
      on every codebase that has one. The rule matches **package-level**
      symbols only (no `#` member segment) — a *method* named `init` or
      `main` is not hidden and classifies normally.
+   - Go test-entry functions (`Test*`, `Benchmark*`, `Fuzz*`, `Example*`,
+     including `TestMain`): registered with the testing framework at
+     runtime, never statically referenced — the same runtime-invoked
+     class as `main`/`init`. The rule is scoped to **package-level**
+     symbols defined in `*_test.go` documents: a function named `TestFoo`
+     in a non-test `.go` file is ordinary code and classifies normally,
+     and a *method* named `TestHelper` is not an entry point. The name
+     prefix must be followed by end-of-name or an uppercase letter (Go's
+     own `isTestFunction` convention — `TestFoo` matches, `Testing` does
+     not). Excluded from both the default view and `--include-exported`;
+     they do not count toward `exportedHidden`.
 4. **Excluded by default, revealed by `--include-exported`**: exported
    symbols (case-based convention shared by Go and C# — a heuristic, not
    a language service). An exported zero-ref symbol is an *incomplete*

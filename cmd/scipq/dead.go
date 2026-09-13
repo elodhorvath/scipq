@@ -76,6 +76,49 @@ func isEntryPoint(sym string) bool {
 	return tail == "main" || tail == "init"
 }
 
+// isTestEntryPoint reports whether sym is a Go test-entry function
+// (Test*/Benchmark*/Fuzz*/Example*, including TestMain): registered with
+// the testing framework at runtime, never statically referenced, so it
+// presents as zero-ref on every codebase that has one — the same
+// runtime-invoked class as main/init (issue #50). The rule is scoped to
+// package-level symbols (no '#' member segment) defined in *_test.go
+// documents: a function named TestFoo in a non-test .go file is ordinary
+// code and classifies normally, and a method named TestHelper is not an
+// entry point. The name prefix is matched on the descriptor's last
+// /-segment with backticks stripped, mirroring isEntryPoint's shape
+// handling for both the trailing-dot and "()." descriptor forms.
+func isTestEntryPoint(sym, file string) bool {
+	if !strings.HasSuffix(file, "_test.go") {
+		return false
+	}
+	tail := symbolTail(sym)
+	if strings.Contains(tail, "#") {
+		return false
+	}
+	tail = strings.ReplaceAll(tail, "`", "")
+	tail = strings.TrimRight(tail, "().")
+	if i := strings.LastIndex(tail, "/"); i >= 0 {
+		tail = tail[i+1:]
+	}
+	// Prefix classes, Go's own isTestFunction convention: the prefix must
+	// be followed by end-of-name or an uppercase letter — "TestFoo" and
+	// "Test" match, "Testing" and "Tested" do not. An empty name is never
+	// an entry point.
+	if tail == "" {
+		return false
+	}
+	for _, prefix := range []string{"Test", "Benchmark", "Fuzz", "Example"} {
+		if !strings.HasPrefix(tail, prefix) {
+			continue
+		}
+		rest := tail[len(prefix):]
+		if len(rest) == 0 || (rest[0] >= 'A' && rest[0] <= 'Z') {
+			return true
+		}
+	}
+	return false
+}
+
 // deadMarkers renders the human markers for one dead symbol in
 // deterministic order: (test-only) then (exported).
 func deadMarkers(s DeadSymbol) string {
@@ -102,16 +145,18 @@ func deadMarkers(s DeadSymbol) string {
 // unreferenced local is the strongest dead signal there is (deliberate
 // divergence from skeleton, which drops them), but a referenced local is
 // either live or vacuously test-only — its uses are definitionally
-// test-side — so it is not a dead-code candidate. Package clauses and
-// package-level main/init are excluded unconditionally. Groups sort by
-// dir; symbols sort by (file, line, symbol) — deterministic.
+// test-side — so it is not a dead-code candidate. Package clauses,
+// package-level main/init, and Go test-entry functions (Test*/Benchmark*/
+// Fuzz*/Example* in *_test.go documents — runtime-invoked, issue #50) are
+// excluded unconditionally. Groups sort by dir; symbols sort by (file,
+// line, symbol) — deterministic.
 func computeDead(ri *index.ReverseIndex, includeExported bool) DeadResult {
 	defs := ri.DefsAll()
 	groupsMap := map[string][]DeadSymbol{}
 	total := 0
 	exportedHidden := 0
 	for sym, sites := range defs {
-		if len(sites) == 0 || isBarePackageSymbol(sym) || isEntryPoint(sym) {
+		if len(sites) == 0 || isBarePackageSymbol(sym) || isEntryPoint(sym) || isTestEntryPoint(sym, sites[0].File) {
 			continue
 		}
 		// Test-only heuristic (same as blast's untested flag): every

@@ -264,10 +264,14 @@ positives are worse than an honest noisy list):
 - **Dead**: defined, zero references anywhere in the index.
 - **Test-only**: referenced, but every reference originates from a
   `*_test.go` document — listed with the marker, not dropped.
-- **Excluded unconditionally**: bare package clauses, and package-level
+- **Excluded unconditionally**: bare package clauses, package-level
   `main`/`init` entry points (invoked by the runtime, never referenced in
-  the index). A *method* named `init` or `main` is not hidden — it
-  classifies normally.
+  the index), and Go test-entry functions — `Test*`/`Benchmark*`/`Fuzz*`/
+  `Example*` (including `TestMain`) defined in `*_test.go` documents,
+  registered with the testing framework at runtime. A function named
+  `TestFoo` in a non-test `.go` file is ordinary code and classifies
+  normally; a *method* named `init`, `main`, or `TestHelper` is not an
+  entry point — it classifies normally.
 - **Excluded by default**: exported symbols (case-based convention,
   shared by Go and C# — a heuristic, not a language service). Their refs
   may exist outside the index, so "zero refs in-index" cannot distinguish
