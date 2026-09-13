@@ -175,6 +175,70 @@ func TestParseUnifiedDiff(t *testing.T) {
 			want: map[string]map[int32]bool{"animal.go": {1: true, 2: true}},
 		},
 		{
+			name: "added line starting with +++ is body, not header",
+			diff: cannedDiff(
+				`diff --git a/animal.go b/animal.go`,
+				`--- a/animal.go`,
+				`+++ b/animal.go`,
+				`@@ -2,0 +3,2 @@`,
+				`+++ weird`,
+				`+// marker`,
+			),
+			// Hunk declares 2 new body lines; "+++ weird" is body (line 3),
+			// "+// marker" is body (line 4). Without length discipline the
+			// lookalike header would reset the parse and drop the hunk.
+			want: map[string]map[int32]bool{"animal.go": {3: true, 4: true}},
+		},
+		{
+			name: "context line starting with @@ is body, not header",
+			diff: cannedDiff(
+				`diff --git a/animal.go b/animal.go`,
+				`--- a/animal.go`,
+				`+++ b/animal.go`,
+				`@@ -2,2 +3,3 @@`,
+				` ctx`,
+				`@@ -1,1 +1,1 @@`,
+				`+// marker`,
+			),
+			// The raw "@@ ..." line is a context line inside the hunk
+			// (added content would carry a "+" prefix). Without length
+			// discipline it would be misread as a new hunk header.
+			// newStart=3: " ctx" consumes new line 3, the "@@ ..." line
+			// consumes new line 4 (context), "+// marker" marks line 5.
+			want: map[string]map[int32]bool{"animal.go": {5: true}},
+		},
+		{
+			name: "deleted line starting with --- is body, not header",
+			diff: cannedDiff(
+				`diff --git a/animal.go b/animal.go`,
+				`--- a/animal.go`,
+				`+++ b/animal.go`,
+				`@@ -2,2 +2,1 @@`,
+				`--- weird`,
+				`+kept`,
+			),
+			want: map[string]map[int32]bool{"animal.go": {2: true}},
+		},
+		{
+			name: "hunk ends at declared count; next header honored",
+			diff: cannedDiff(
+				`diff --git a/animal.go b/animal.go`,
+				`--- a/animal.go`,
+				`+++ b/animal.go`,
+				`@@ -1,1 +1,1 @@`,
+				`+first`,
+				`diff --git a/util/helper.go b/util/helper.go`,
+				`--- a/util/helper.go`,
+				`+++ b/util/helper.go`,
+				`@@ -1,1 +1,1 @@`,
+				`+second`,
+			),
+			want: map[string]map[int32]bool{
+				"animal.go":      {1: true},
+				"util/helper.go": {1: true},
+			},
+		},
+		{
 			name: "pure deletion hunk (U0) yields no file entry",
 			diff: cannedDiff(
 				`diff --git a/animal.go b/animal.go`,
@@ -292,6 +356,59 @@ func buildBlastFixtureIndex(t *testing.T) *index.ReverseIndex {
 	ri, err := index.Load(path)
 	if err != nil {
 		t.Fatalf("load blast fixture: %v", err)
+	}
+	return ri
+}
+
+// buildExternalRefFixtureIndex extends the blast fixture with a reference
+// to an external symbol (different module prefix — stdlib-like), which
+// must NOT surface as a broken ref.
+func buildExternalRefFixtureIndex(t *testing.T) *index.ReverseIndex {
+	t.Helper()
+	animalSpeak := "go github.com/example/animal Animal#Speak()."
+	deleted := "go github.com/example/animal Deleted#Thing()."
+	external := "go stdlib/fmt Fmt#Println()."
+	def := func(sym string, line int32) *scip.Occurrence {
+		return &scip.Occurrence{
+			Range:       []int32{line, 0, 10},
+			Symbol:      sym,
+			SymbolRoles: int32(scip.SymbolRole_Definition),
+		}
+	}
+	ref := func(sym string, line int32) *scip.Occurrence {
+		return &scip.Occurrence{Range: []int32{line, 0, 10}, Symbol: sym}
+	}
+	idx := &scip.Index{
+		Metadata: &scip.Metadata{
+			ToolInfo:    &scip.ToolInfo{Name: "scipq-test", Version: "0.0.0"},
+			ProjectRoot: "file:///synthetic",
+		},
+		Documents: []*scip.Document{
+			{
+				RelativePath: "animal.go",
+				Occurrences:  []*scip.Occurrence{def(animalSpeak, 2)},
+			},
+			{
+				RelativePath: "services/zoo.go",
+				Occurrences: []*scip.Occurrence{
+					ref(animalSpeak, 10),
+					ref(deleted, 20),  // module-internal dangling ref
+					ref(external, 21), // external: must NOT surface
+				},
+			},
+		},
+	}
+	data, err := proto.Marshal(idx)
+	if err != nil {
+		t.Fatalf("marshal external-ref fixture: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "index.scip")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write external-ref fixture: %v", err)
+	}
+	ri, err := index.Load(path)
+	if err != nil {
+		t.Fatalf("load external-ref fixture: %v", err)
 	}
 	return ri
 }
@@ -462,6 +579,34 @@ func TestComputeBlast(t *testing.T) {
 		}
 	})
 
+	t.Run("broken refs scoped to module prefix: external refs excluded", func(t *testing.T) {
+		// The fixture's defs all share "go github.com/example/". A ref to
+		// an external symbol (different prefix) must NOT surface as a
+		// broken ref — on real indexes every stdlib/third-party ref would
+		// otherwise flood the output.
+		ri2 := buildExternalRefFixtureIndex(t)
+		res := computeBlast(ri2, map[string]map[int32]bool{}, 0)
+		for _, g := range res.Groups {
+			for _, s := range g.Symbols {
+				if strings.Contains(s.Symbol, "fmt.Print") {
+					t.Errorf("external symbol %q surfaced as broken ref:\n%+v", s.Symbol, res.Groups)
+				}
+			}
+		}
+		// The module-internal dangling ref still surfaces.
+		var found bool
+		for _, g := range res.Groups {
+			for _, s := range g.Symbols {
+				if strings.Contains(s.Symbol, "Deleted#Thing") {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Errorf("module-internal dangling ref not surfaced:\n%+v", res.Groups)
+		}
+	})
+
 	t.Run("empty diff yields empty result", func(t *testing.T) {
 		res := computeBlast(ri, map[string]map[int32]bool{}, 2)
 		if res.Touched != 0 {
@@ -544,8 +689,12 @@ func TestRunBlastEmptyDiff(t *testing.T) {
 	if errb.Len() != 0 {
 		t.Errorf("stderr not empty: %q", errb.String())
 	}
-	// Empty diff still surfaces broken refs (the deletion channel):
-	// Deleted#Thing is referenced but undefined in the fixture.
+	// The broken-ref channel is diff-independent: a reference to an
+	// undefined module-internal symbol is a break regardless of the diff
+	// (external refs are excluded by module-prefix scoping). Deleted#Thing
+	// is referenced but undefined in the fixture, so it surfaces even on
+	// an empty diff. "Empty result" in the contract means no TOUCHED
+	// symbols, not an empty groups list.
 	if !contains(out.String(), "broken ref") {
 		t.Errorf("empty-diff output missing broken-ref entry:\n%s", out.String())
 	}

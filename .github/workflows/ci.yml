@@ -78,3 +78,29 @@ jobs:
       - name: Smoke — callers --json is valid JSON
         run: |
           ./scipq callers Helper --index testdata/index.scip --json | python3 -m json.tool > /dev/null
+
+      - name: Smoke — blast on synthetic diff
+        run: |
+          set +e
+          printf 'diff --git a/animal.go b/animal.go\n--- a/animal.go\n+++ b/animal.go\n@@ -2,1 +3,1 @@\n+changed\n' | ./scipq blast --index testdata/index.scip > /tmp/blast.out 2>/tmp/blast.err
+          code=$?
+          set -e
+          test "$code" -eq 0 || (echo "expected exit 0, got $code" && exit 1)
+          grep -q "1 touched" /tmp/blast.out || (echo "missing touched count" && exit 1)
+          grep -q "Speak" /tmp/blast.out || (echo "missing touched symbol" && exit 1)
+
+      - name: Smoke — blast empty diff exits 0
+        run: |
+          set +e
+          printf '' | ./scipq blast --index testdata/index.scip > /tmp/blastempty.out 2>/dev/null
+          code=$?
+          set -e
+          test "$code" -eq 0 || (echo "expected exit 0, got $code" && exit 1)
+
+      - name: Smoke — blast TTY stdin exits 1
+        run: |
+          set +e
+          ./scipq blast --index testdata/index.scip < /dev/null
+          code=$?
+          set -e
+          test "$code" -eq 1 || (echo "expected exit 1, got $code" && exit 1)

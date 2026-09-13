@@ -150,9 +150,11 @@ What can my change break? Reads a standard unified diff from stdin (no
 git integration — you produce the diff), maps changed lines to symbols
 defined on them, and walks transitive dependents: symbols defined in
 files that reference the change, plus implements chains. References to
-symbols with no definition in the index are surfaced as `broken ref` —
-the deletion channel. Symbols with no `*_test.go` references are flagged
-`untested`.
+module-internal symbols with no definition in the index are surfaced as
+`broken ref` — the deletion channel. External references (stdlib,
+third-party — symbols outside the indexed module's prefix) are excluded
+so the channel stays signal, not noise. Symbols with no `*_test.go`
+references are flagged `untested`.
 
 ```bash
 $ git diff -U0 | scipq blast
@@ -179,8 +181,11 @@ Flags:
   `untested`).
 - `--index <path>` — index location (default `./index.scip`).
 
-Empty diff → exit 0 with an empty result. A terminal stdin (no pipe) is
-a usage error (exit 1). Missing index exits 2.
+Empty diff → exit 0; no *touched* symbols, though module-internal
+broken refs still surface (they are breaks regardless of the diff). A
+terminal stdin (no pipe) is a usage error (exit 1) — note `/dev/null`
+redirect counts as a terminal (char-device check), so CI scripts should
+pipe explicitly. Missing index exits 2.
 
 ## Verbs
 

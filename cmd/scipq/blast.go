@@ -56,9 +56,11 @@ type BlastResult struct {
 }
 
 // parseUnifiedDiff extracts the set of changed (new-side) line numbers per
-// file from standard unified diff text. Lines are 1-based. It reads hunk
-// bodies line-by-line — '+' lines mark changed lines, '-' and ' ' lines
-// advance counters only — so any -U context value yields exact sets.
+// file from standard unified diff text. Lines are 1-based. It enforces
+// hunk-length discipline: the "@@ -a,b +c,d @@" header declares how many
+// old/new body lines follow, and exactly that many body lines are
+// consumed before a new file header is honored — so added content that
+// itself starts with "+++ ", "--- ", or "@@ " cannot corrupt the parse.
 // /dev/null targets (deletions) are dropped; binary file markers are
 // skipped; "\ No newline at end of file" markers are ignored.
 func parseUnifiedDiff(text string) map[string]map[int32]bool {
@@ -68,10 +70,51 @@ func parseUnifiedDiff(text string) map[string]map[int32]bool {
 
 	var newFile string
 	var newLine int32
+	var newRemaining int32 // body lines left in the current hunk (new side)
+	var oldRemaining int32 // body lines left in the current hunk (old side)
 	inHunk := false
 
 	for sc.Scan() {
 		line := sc.Text()
+		// Inside a hunk, body lines are consumed by count — a body line
+		// that looks like a header ("+++ x", "--- x", "@@ ...") is body,
+		// period. Only when the hunk is exhausted do headers apply again.
+		if inHunk {
+			if strings.HasPrefix(line, `\`+" No newline") {
+				continue // marker, not a diff line
+			}
+			if newRemaining <= 0 && oldRemaining <= 0 {
+				inHunk = false // hunk exhausted; fall through to header cases
+			} else {
+				switch {
+				case strings.HasPrefix(line, "+"):
+					if newRemaining > 0 {
+						set := changed[newFile]
+						if set == nil {
+							set = map[int32]bool{}
+							changed[newFile] = set
+						}
+						set[newLine] = true
+						newLine++
+						newRemaining--
+					}
+				case strings.HasPrefix(line, "-"):
+					if oldRemaining > 0 {
+						oldRemaining--
+					}
+				default:
+					// Context line counts on both sides.
+					if newRemaining > 0 {
+						newLine++
+						newRemaining--
+					}
+					if oldRemaining > 0 {
+						oldRemaining--
+					}
+				}
+				continue
+			}
+		}
 		switch {
 		case strings.HasPrefix(line, "diff --git "):
 			// "diff --git a/X b/Y" — the new path wins (renames resolve
@@ -89,28 +132,12 @@ func parseUnifiedDiff(text string) map[string]map[int32]bool {
 		case strings.HasPrefix(line, "--- "):
 			// Old path; nothing to track on the new side.
 		case strings.HasPrefix(line, "@@ "):
-			// "@@ -a,b +c,d @@ ..." — c is the new-side start (1-based).
+			// "@@ -a,b +c,d @@ ..." — c is the new-side start (1-based);
+			// b and d are the old/new body-line counts.
 			inHunk = true
-			newLine = parseHunkNewStart(line)
+			newLine, newRemaining, oldRemaining = parseHunkHeader(line)
 		case strings.HasPrefix(line, "Binary files "):
 			inHunk = false
-		case strings.HasPrefix(line, `\ No newline`):
-			// Marker, not a diff line: leave counters untouched.
-		case inHunk && newFile != "":
-			switch {
-			case strings.HasPrefix(line, "+"):
-				set := changed[newFile]
-				if set == nil {
-					set = map[int32]bool{}
-					changed[newFile] = set
-				}
-				set[newLine] = true
-				newLine++
-			case strings.HasPrefix(line, "-"):
-				// Old-side line: does not advance the new-side counter.
-			default:
-				newLine++
-			}
 		}
 	}
 	return changed
@@ -127,20 +154,56 @@ func gitPath(line string) string {
 	return ""
 }
 
-// parseHunkNewStart extracts the new-side start line from a hunk header
-// ("@@ -a,b +c,d @@"). Returns 1 for malformed headers.
-func parseHunkNewStart(header string) int32 {
-	i := strings.Index(header, " +")
+// parseHunkHeader extracts the new-side start line and the old/new
+// body-line counts from a hunk header ("@@ -a,b +c,d @@"). Degenerate
+// counts (",0" omitted by git for single-line ranges) default to 1;
+// malformed headers yield start 1 with zero remaining counts.
+func parseHunkHeader(header string) (newStart, newCount, oldCount int32) {
+	newStart, newCount, oldCount = 1, 0, 0
+	// Split the ranges: "@@ -a,b +c,d @@ ..." → tokens "-a,b" and "+c,d".
+	i := strings.Index(header, " -")
 	if i < 0 {
-		return 1
+		return
 	}
 	rest := header[i+2:]
+	j := strings.Index(rest, " +")
+	if j < 0 {
+		return
+	}
+	oldPart := rest[:j]
+	rest = rest[j+2:]
 	if end := strings.IndexAny(rest, " @"); end >= 0 {
 		rest = rest[:end]
 	}
-	rest = strings.Split(rest, ",")[0]
+	newPart := rest
+	oldStart := int32(1)
+	oldPart = strings.Split(oldPart, ",")[0]
+	if n, err := fmt.Sscanf(oldPart, "%d", new(int)); err == nil {
+		_ = n
+	}
+	var o int
+	if _, err := fmt.Sscanf(oldPart, "%d", &o); err == nil && o > 0 {
+		oldStart = int32(o)
+	}
+	_ = oldStart
 	var n int
-	if _, err := fmt.Sscanf(rest, "%d", &n); err != nil || n <= 0 {
+	if _, err := fmt.Sscanf(newPart, "%d", &n); err == nil && n > 0 {
+		newStart = int32(n)
+	}
+	// Counts: "a,b" → b lines (default 1 when the ",b" part is absent).
+	oldCount = hunkCount(oldPart)
+	newCount = hunkCount(newPart)
+	return newStart, newCount, oldCount
+}
+
+// hunkCount extracts the count part of a range token ("a,b" → b; "a" → 1).
+func hunkCount(part string) int32 {
+	_, after, found := strings.Cut(part, ",")
+	if !found {
+		return 1
+	}
+	var n int
+	if _, err := fmt.Sscanf(after, "%d", &n); err != nil || n < 0 {
 		return 1
 	}
 	return int32(n)
@@ -148,12 +211,21 @@ func parseHunkNewStart(header string) int32 {
 
 // computeBlast builds the blast result: symbols touched by the diff (def
 // site on a changed line), their transitive dependents (reverse refs +
-// implements chains to depth), and broken references (refs to symbols with
-// no definition in the index — the deletion channel). Symbols are grouped
-// by directory of their definition file; ordering is deterministic.
+// implements chains to depth), and broken references (refs to symbols
+// with no definition in the index — the deletion channel). Symbols are
+// grouped by directory of their definition file; ordering is
+// deterministic.
 //
 // Line bases: Site.Line is 0-based; the changed set is 1-based, so def
 // sites are joined as line+1.
+//
+// Broken-ref scoping: SCIP indexes define only the indexed project's own
+// symbols — every stdlib and third-party reference is "referenced but
+// undefined" by construction. To keep the deletion channel from flooding
+// with external symbols, a broken ref is reported only when the
+// referenced symbol shares the indexed module's symbol prefix (derived
+// from the majority prefix of defined symbols). Residual limitation:
+// deletions in other modules are invisible.
 func computeBlast(ri *index.ReverseIndex, changed map[string]map[int32]bool, depth int) BlastResult {
 	defs := ri.DefsAll()
 
@@ -168,12 +240,18 @@ func computeBlast(ri *index.ReverseIndex, changed map[string]map[int32]bool, dep
 		}
 	}
 
-	// Broken references: referenced but never defined — typically deleted
-	// by the diff. A ref to an undefined symbol is a break regardless of
-	// where the ref sits.
+	// The indexed module's symbol prefix: the longest common prefix of
+	// defined symbols up to the last "/" before the descriptor — e.g.
+	// "go github.com/example/animal Animal#Speak()." and
+	// "go github.com/example/util Unrelated#Helper()." share
+	// "go github.com/example/". Only undefined symbols within this
+	// prefix are treated as broken refs.
+	modulePrefix := commonSymbolPrefix(defs)
+
+	// Broken references: referenced, undefined, and inside the module.
 	broken := map[string]bool{}
 	for sym := range ri.RefsAll() {
-		if _, defined := defs[sym]; !defined {
+		if _, defined := defs[sym]; !defined && strings.HasPrefix(sym, modulePrefix) {
 			broken[sym] = true
 		}
 	}
@@ -200,6 +278,16 @@ func computeBlast(ri *index.ReverseIndex, changed map[string]map[int32]bool, dep
 	for sym := range broken {
 		impacted[sym] = true
 	}
+
+	// file → symbols defined in it (one O(defs) pass; answers BFS
+	// frontier lookups lazily instead of building the full depGraph
+	// up front — O(defs × refFiles) on real indexes was the perf risk).
+	defsByFile := map[string][]string{}
+	for sym, sites := range defs {
+		for _, s := range sites {
+			defsByFile[s.File] = append(defsByFile[s.File], sym)
+		}
+	}
 	// referenced symbol → files referencing it.
 	refFiles := map[string]map[string]bool{}
 	for sym, sites := range ri.RefsAll() {
@@ -208,22 +296,6 @@ func computeBlast(ri *index.ReverseIndex, changed map[string]map[int32]bool, dep
 				refFiles[sym] = map[string]bool{}
 			}
 			refFiles[sym][s.File] = true
-		}
-	}
-	// referenced symbol → symbols defined in those files.
-	depGraph := map[string]map[string]bool{}
-	for referenced, files := range refFiles {
-		for f := range files {
-			for sym, sites := range defs {
-				for _, s := range sites {
-					if s.File == f {
-						if depGraph[referenced] == nil {
-							depGraph[referenced] = map[string]bool{}
-						}
-						depGraph[referenced][sym] = true
-					}
-				}
-			}
 		}
 	}
 
@@ -238,17 +310,20 @@ func computeBlast(ri *index.ReverseIndex, changed map[string]map[int32]bool, dep
 	for level := 0; level < depth; level++ {
 		next := map[string]bool{}
 		for sym := range frontier {
-			for dep := range depGraph[sym] {
-				if !visited[dep] {
-					next[dep] = true
+			// File-level deps: symbols defined in files that reference sym.
+			for f := range refFiles[sym] {
+				for _, dep := range defsByFile[f] {
+					if !visited[dep] {
+						next[dep] = true
+					}
 				}
 			}
 			// Implements is a transitive closure: expand fully once.
 			for _, impl := range ri.Implements(sym) {
 				if !visited[impl] {
 					next[impl] = true
-					// Implementors' own file-deps expand on later levels;
-					// mark visited so the closure is not re-walked.
+					// Mark visited so the closure is not re-walked;
+					// implementors' own file-deps expand on later levels.
 					visited[impl] = true
 				}
 			}
@@ -301,6 +376,34 @@ func computeBlast(ri *index.ReverseIndex, changed map[string]map[int32]bool, dep
 	})
 
 	return BlastResult{Touched: len(touched), Groups: groups}
+}
+
+// commonSymbolPrefix derives the indexed module's symbol prefix: the
+// longest common prefix of all defined symbols, cut back to the last "/"
+// (so a partial token never matches). Falls back to "" when symbols share
+// no prefix.
+func commonSymbolPrefix(defs map[string][]index.Site) string {
+	var prefix string
+	first := true
+	for sym := range defs {
+		if first {
+			prefix = sym
+			first = false
+			continue
+		}
+		for !strings.HasPrefix(sym, prefix) {
+			prefix = prefix[:len(prefix)-1]
+			if prefix == "" {
+				return ""
+			}
+		}
+	}
+	if i := strings.LastIndex(prefix, "/"); i >= 0 {
+		prefix = prefix[:i+1]
+	} else {
+		prefix = ""
+	}
+	return prefix
 }
 
 // impactedSymbol renders one impacted symbol for output: display name,
