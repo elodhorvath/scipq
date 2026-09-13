@@ -1,6 +1,9 @@
 # directories
 dist/
 
+# SCIP indexes — generated per workflow (CI artifact or local run), never committed
+/index.scip
+
 # built binaries — release assets only, never committed
 # (anchored to repo root so the cmd/scipq/ source directory is not ignored)
 /scipq

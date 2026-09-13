@@ -111,3 +111,52 @@ jobs:
           code=$?
           set -e
           test "$code" -eq 1 || (echo "expected exit 1, got $code" && exit 1)
+
+  # Self-index (issue #11): dogfood — index this repo with scip-go and
+  # publish index.scip as a build artifact. Info-only: failure here does
+  # not block merge until the job has proven stable.
+  self-index:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install scip-go v0.2.7
+        run: |
+          curl -fsSL -o /tmp/scip-go.tar.gz \
+            https://github.com/scip-code/scip-go/releases/download/v0.2.7/scip-go-linux-amd64.tar.gz
+          tar -xzf /tmp/scip-go.tar.gz -C /usr/local/bin scip-go
+          scip-go --version
+
+      - name: Index this repo
+        run: scip-go index ./... --output index.scip
+
+      - name: Index sanity — size and symbol count
+        run: |
+          ls -lh index.scip
+          go run ./cmd/scipq map --index index.scip --json > /tmp/selfmap.json
+          python3 - <<'EOF'
+          import json
+          with open("/tmp/selfmap.json") as f:
+              m = json.load(f)
+          print(f"self-index: {m['files']} files, {m['symbols']} symbols")
+          assert m["files"] > 0, "self-index produced no files"
+          assert m["symbols"] > 0, "self-index produced no symbols"
+          EOF
+
+      - name: Dogfood — scipq map on its own index
+        run: go run ./cmd/scipq map --index index.scip
+
+      - name: Upload index artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: index.scip
+          path: index.scip
+          retention-days: 30
+          if-no-files-found: error
