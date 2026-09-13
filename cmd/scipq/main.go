@@ -133,7 +133,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "usage: scipq <verb> [args] [--json]")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "verbs: map, callers")
+	fmt.Fprintln(w, "verbs: map, callers, blast")
 	fmt.Fprintln(w, "run 'scipq <verb> -h' for verb help")
 }
 
@@ -166,15 +166,10 @@ func newRootCommand(load indexLoader) *cli.Command {
 		Commands: []*cli.Command{
 			mapCommand(load),
 			callersCommand(load),
+			blastCommand(load),
 			// Stubs stay invocable (existing diagnostics + exit 1) but are
 			// hidden from help and completion so they don't read as real
 			// verbs.
-			{
-				Name:   "blast",
-				Usage:  "not implemented yet",
-				Hidden: true,
-				Action: stubAction("blast"),
-			},
 			{
 				Name:   "skeleton",
 				Usage:  "not implemented yet",

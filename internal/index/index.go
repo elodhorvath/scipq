@@ -127,6 +127,16 @@ func (r *ReverseIndex) RefsAll() map[string][]Site {
 	return out
 }
 
+// DefsAll returns the full definition map: symbol → definition sites. The
+// returned map is a copy; mutating it does not affect the index.
+func (r *ReverseIndex) DefsAll() map[string][]Site {
+	out := make(map[string][]Site, len(r.defs))
+	for sym, sites := range r.defs {
+		out[sym] = append([]Site(nil), sites...)
+	}
+	return out
+}
+
 // Load parses the SCIP index at path and builds a ReverseIndex over it.
 // It returns an error wrapping ErrNotFound when the file does not exist.
 func Load(path string) (*ReverseIndex, error) {

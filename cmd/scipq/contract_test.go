@@ -41,7 +41,6 @@ func TestExitCodeContract(t *testing.T) {
 		{"callers no args", []string{"callers"}, exitUsage},
 		{"callers two args", []string{"callers", "a", "b"}, exitUsage},
 		{"callers empty arg", []string{"callers", ""}, exitUsage},
-		{"stub verb blast", []string{"blast"}, exitUsage},
 		{"stub verb skeleton", []string{"skeleton"}, exitUsage},
 		{"stub verb dead", []string{"dead"}, exitUsage},
 
@@ -96,21 +95,9 @@ func TestUsagePrecedesMissingIndex(t *testing.T) {
 	}
 }
 
-func TestStubVerbDiagnostic(t *testing.T) {
-	_, errb := captureWriter(t)
-	ri := loadFixtureIndex(t)
-	code := runWith(t, []string{"blast"}, ri)
-	if code != exitUsage {
-		t.Errorf("exit = %d, want %d", code, exitUsage)
-	}
-	if !contains(errb.String(), "not implemented yet") {
-		t.Errorf("stderr missing stub diagnostic:\n%s", errb.String())
-	}
-}
-
 func TestStubVerbsHiddenFromHelp(t *testing.T) {
 	// Stubs stay invocable but must not read as real verbs in help or
-	// completion output.
+	// completion output. blast is live and must be listed.
 	_, errb := captureWriter(t)
 	ri := loadFixtureIndex(t)
 	code := runWith(t, []string{}, ri)
@@ -118,12 +105,12 @@ func TestStubVerbsHiddenFromHelp(t *testing.T) {
 		t.Fatalf("bare invocation exit = %d, want %d", code, exitUsage)
 	}
 	usage := errb.String()
-	for _, stub := range []string{"blast", "skeleton", "dead"} {
+	for _, stub := range []string{"skeleton", "dead"} {
 		if contains(usage, stub) {
 			t.Errorf("usage output lists stub verb %q:\n%s", stub, usage)
 		}
 	}
-	for _, live := range []string{"map", "callers"} {
+	for _, live := range []string{"map", "callers", "blast"} {
 		if !contains(usage, live) {
 			t.Errorf("usage output missing live verb %q:\n%s", live, usage)
 		}
