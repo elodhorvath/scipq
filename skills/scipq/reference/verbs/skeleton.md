@@ -44,13 +44,20 @@ they are the payload, not noise. No `--all` escape hatch in v1.
     {
       "symbol": "go github.com/example/animal Animal.",
       "name": "Animal",
-      "kind": "class",
+      "kind": "type",
       "line": 2,
       "exported": true
     }
   ]
 }
 ```
+
+The example above is the shipped shape against the committed fixture
+(grammar fallback: no recorded kind → trailing `.` → `type`). An indexer
+that records kinds emits its value instead — e.g. `"kind": "class"` for
+the same symbol when `SymbolInformation.Kind` is populated (see
+`buildSkeletonFixtureIndex` in `cmd/scipq/skeleton_test.go` for that
+recipe).
 
 - `line` is 1-based.
 - `symbols` sorted by (line, name).
