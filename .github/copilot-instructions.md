@@ -106,6 +106,11 @@ When the user says "work on issue N" (or similar):
 - Keep PRs narrow; unrelated changes get their own issue/PR.
 - README is maintained with every user-visible change (new verb, flag, or
   behavior change updates README in the same PR).
+- **Agent skill is maintained with every user-visible change**: new verb,
+  flag, or behavior change updates `skills/scipq/` in the same PR —
+  `SKILL.md` decision policy/contract if agent-facing behavior changed,
+  `reference/verbs/<verb>.md` for verb-level detail. Mirrors the README
+  rule: one change, both surfaces, same PR.
 - Larger instruction sets (architecture notes, style guides) get their own
   `docs/*.md` when needed — do not grow this file unboundedly.
 - No secrets, no machine-specific config, no generated binaries in the repo.
