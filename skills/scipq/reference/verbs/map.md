@@ -46,6 +46,10 @@ Takes no positional arguments.
 
 - `clusters` sorted by descending symbol count, then dir name.
 - `hubs` sorted by descending refs, then symbol; top 3 per cluster.
+- `hubs.symbol` is a short display name: the member name for member
+  symbols (`Pkg#Member`), the last path segment for package-level
+  symbols (scip-go `` `pkg/path`/name `` — backticks stripped), and the
+  whole symbol for scip-go locals (`local 8`).
 - `hotspots` sorted by descending refs, then file; top 5.
 - `truncated` is `true` when `--limit` cut clusters.
 

@@ -61,34 +61,62 @@ func dirOf(p string) string {
 
 // shortSymbol renders a symbol for display: the last meaningful segment of
 // the SCIP identifier, so output stays token-budgeted.
+//
+// Shapes handled:
+//
+//   - Member symbols ("go <mod> <pkg> <Name>#<Member>()."): the member
+//     name after '#'.
+//   - Type-level symbols ("...Assert#"): empty member position falls
+//     back to the last path segment of the descriptor.
+//   - Package-level scip-go symbols ("...`pkg/path`/name.",
+//     "...`pkg/path`/"): no '#' — the last path segment of the
+//     backtick-stripped descriptor.
+//   - scip-go local symbols ("local 8"): no extractable name — the whole
+//     symbol is the display (a bare digit would read as a count).
 func shortSymbol(sym string) string {
-	// scip-go style: "go <module> <pkg> <Name>#<Member>()." — keep the
-	// trailing name portion after the last space, then trim descriptor
-	// punctuation.
-	s := sym
-	if i := strings.LastIndex(s, " "); i >= 0 {
-		s = s[i+1:]
+	// Descriptor tail: everything after the last space.
+	tail := sym
+	if i := strings.LastIndex(tail, " "); i >= 0 {
+		tail = tail[i+1:]
 	}
-	if i := strings.IndexAny(s, "#"); i >= 0 {
-		s = s[i+1:]
+	// Member symbols carry the name after '#'. Prefer the member name.
+	if i := strings.Index(tail, "#"); i >= 0 {
+		if member := strings.TrimRight(tail[i+1:], "()."); member != "" {
+			return member
+		}
+		// Empty member position (e.g. "...Assert#"): fall through to the
+		// path-segment logic on the trimmed tail.
+		tail = strings.TrimRight(tail, "#().")
 	}
+	// No '#' — package-level scip-go symbols and locals. Display the last
+	// path segment of the descriptor, backticks stripped.
+	s := strings.ReplaceAll(tail, "`", "")
 	s = strings.TrimRight(s, "().")
-	if s == "" {
-		// Type-level symbol (e.g. "...xunit.assert Xunit/Assert#"): the
-		// member position is empty, so take the last path segment before
-		// the trailing descriptor separator.
-		head := sym
-		if i := strings.LastIndex(head, " "); i >= 0 {
-			head = head[i+1:]
-		}
-		head = strings.TrimRight(head, "#().")
-		if j := strings.LastIndexAny(head, "/#"); j >= 0 {
-			s = head[j+1:]
-		} else {
-			s = head
-		}
+	s = strings.TrimRight(s, "/")
+	if j := strings.LastIndex(s, "/"); j >= 0 {
+		s = s[j+1:]
+	}
+	if s == "" || isAllDigits(s) {
+		// Nothing extractable, or the tail is a bare digit (scip-go
+		// "local 8"): the whole symbol is the most informative
+		// deterministic rendering.
+		return sym
 	}
 	return s
+}
+
+// isAllDigits reports whether s is non-empty and consists only of ASCII
+// digits.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // isParamFragment reports whether a symbol is a parameter occurrence

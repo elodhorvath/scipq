@@ -344,6 +344,15 @@ func TestShortSymbol(t *testing.T) {
 		{"csharp example.assert, Services example.assert.Services/Xunit/Assert#", "Assert"},
 		{"go github.com/example/animal Animal#", "Animal"},
 		{"", ""},
+		// Real scip-go shapes (issue #40, found by the self-index dogfood
+		// loop): package-level symbols carry a backticked package path with
+		// no '#' separator; local symbols are bare "local N" strings.
+		{"scip-go gomod github.com/elodhorvath/scipq 40e534a1c6a0 `github.com/elodhorvath/scipq/cmd/scipq`/exitUsage.", "exitUsage"},
+		{"scip-go gomod github.com/elodhorvath/scipq 40e534a1c6a0 `github.com/elodhorvath/scipq/internal/index`/", "index"},
+		{"scip-go gomod github.com/elodhorvath/scipq 40e534a1c6a0 `github.com/elodhorvath/scipq/cmd/scipq.test`/benchmarks.", "benchmarks"},
+		{"scip-go gomod github.com/elodhorvath/scipq 40e534a1c6a0 `github.com/elodhorvath/scipq/cmd/scipq.test`/", "scipq.test"},
+		{"local 8", "local 8"},
+		{"local 0", "local 0"},
 	}
 	for _, tt := range tests {
 		if got := shortSymbol(tt.in); got != tt.want {
