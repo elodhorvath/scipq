@@ -176,16 +176,7 @@ func parseHunkHeader(header string) (newStart, newCount, oldCount int32) {
 		rest = rest[:end]
 	}
 	newPart := rest
-	oldStart := int32(1)
 	oldPart = strings.Split(oldPart, ",")[0]
-	if n, err := fmt.Sscanf(oldPart, "%d", new(int)); err == nil {
-		_ = n
-	}
-	var o int
-	if _, err := fmt.Sscanf(oldPart, "%d", &o); err == nil && o > 0 {
-		oldStart = int32(o)
-	}
-	_ = oldStart
 	var n int
 	if _, err := fmt.Sscanf(newPart, "%d", &n); err == nil && n > 0 {
 		newStart = int32(n)
@@ -249,10 +240,15 @@ func computeBlast(ri *index.ReverseIndex, changed map[string]map[int32]bool, dep
 	modulePrefix := commonSymbolPrefix(defs)
 
 	// Broken references: referenced, undefined, and inside the module.
+	// An empty module prefix (multi-language index, or no defs at all)
+	// means scoping is impossible — the channel stays OFF rather than
+	// flooding with every external reference.
 	broken := map[string]bool{}
-	for sym := range ri.RefsAll() {
-		if _, defined := defs[sym]; !defined && strings.HasPrefix(sym, modulePrefix) {
-			broken[sym] = true
+	if modulePrefix != "" {
+		for sym := range ri.RefsAll() {
+			if _, defined := defs[sym]; !defined && strings.HasPrefix(sym, modulePrefix) {
+				broken[sym] = true
+			}
 		}
 	}
 

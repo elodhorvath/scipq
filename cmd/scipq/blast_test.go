@@ -413,6 +413,63 @@ func buildExternalRefFixtureIndex(t *testing.T) *index.ReverseIndex {
 	return ri
 }
 
+// buildDisjointPrefixFixtureIndex builds an index whose defined symbols
+// share no common prefix (go + java naming schemes) — commonSymbolPrefix
+// returns "", and the broken-ref channel must stay off.
+func buildDisjointPrefixFixtureIndex(t *testing.T) *index.ReverseIndex {
+	t.Helper()
+	goSym := "go github.com/example/animal Animal#Speak()."
+	javaSym := "java com.example.util Util#Helper()."
+	goDangling := "go github.com/example/animal Gone#Thing()."
+	javaDangling := "java com.example.util Missing#Run()."
+	def := func(sym string, line int32) *scip.Occurrence {
+		return &scip.Occurrence{
+			Range:       []int32{line, 0, 10},
+			Symbol:      sym,
+			SymbolRoles: int32(scip.SymbolRole_Definition),
+		}
+	}
+	ref := func(sym string, line int32) *scip.Occurrence {
+		return &scip.Occurrence{Range: []int32{line, 0, 10}, Symbol: sym}
+	}
+	idx := &scip.Index{
+		Metadata: &scip.Metadata{
+			ToolInfo:    &scip.ToolInfo{Name: "scipq-test", Version: "0.0.0"},
+			ProjectRoot: "file:///synthetic",
+		},
+		Documents: []*scip.Document{
+			{
+				RelativePath: "animal.go",
+				Occurrences:  []*scip.Occurrence{def(goSym, 2)},
+			},
+			{
+				RelativePath: "util/Util.java",
+				Occurrences:  []*scip.Occurrence{def(javaSym, 1)},
+			},
+			{
+				RelativePath: "services/zoo.go",
+				Occurrences: []*scip.Occurrence{
+					ref(goDangling, 10),   // undefined, go prefix
+					ref(javaDangling, 11), // undefined, java prefix
+				},
+			},
+		},
+	}
+	data, err := proto.Marshal(idx)
+	if err != nil {
+		t.Fatalf("marshal disjoint-prefix fixture: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "index.scip")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write disjoint-prefix fixture: %v", err)
+	}
+	ri, err := index.Load(path)
+	if err != nil {
+		t.Fatalf("load disjoint-prefix fixture: %v", err)
+	}
+	return ri
+}
+
 func TestComputeBlast(t *testing.T) {
 	ri := buildBlastFixtureIndex(t)
 
@@ -604,6 +661,22 @@ func TestComputeBlast(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("module-internal dangling ref not surfaced:\n%+v", res.Groups)
+		}
+	})
+
+	t.Run("empty module prefix disables the broken-ref channel", func(t *testing.T) {
+		// A multi-language index (go + java symbols share no prefix) makes
+		// commonSymbolPrefix return "" — and HasPrefix(sym, "") is true
+		// for every symbol, which would re-enable the unscoped flood.
+		// Empty prefix = channel off: zero broken refs, no flood.
+		ri2 := buildDisjointPrefixFixtureIndex(t)
+		res := computeBlast(ri2, map[string]map[int32]bool{}, 0)
+		for _, g := range res.Groups {
+			for _, s := range g.Symbols {
+				if s.Reason == relationBrokenRef {
+					t.Errorf("broken ref surfaced with empty module prefix:\n%+v", res.Groups)
+				}
+			}
 		}
 	})
 
