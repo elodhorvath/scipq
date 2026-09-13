@@ -1,0 +1,12 @@
+// markdownlint-cli2 configuration for scipq.
+//
+// MD013 (line length, default 80) is disabled: this repo's markdown
+// intentionally uses long lines — URLs, inline code spans, tables, and
+// prose that reads better unreflowed. All other markdownlint defaults
+// apply (including MD047 trailing-newline, which motivated adding this
+// lint step).
+{
+  "config": {
+    "MD013": false
+  }
+}
