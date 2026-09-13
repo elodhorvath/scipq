@@ -197,6 +197,18 @@ pipe explicitly. Missing index exits 2.
 | `skeleton` | What's the API surface of this file? |
 | `dead` | What's defined but never referenced? |
 
+## Agent skill
+
+An agent-facing skill ships in this repo at [`skills/scipq/`](skills/scipq/SKILL.md):
+a decision policy (when to query instead of reading source), the agent-UX
+contract (`--json` data-only stdout, exit codes, persistent flags), and
+per-verb deep reference. Point your coding agent at that path — or copy it
+into your agent's skill directory; the format is agent-agnostic
+([AgentSkills](https://agentskills.io) frontmatter).
+
+The skill is maintained with every user-visible change (same PR as the
+change), so it never drifts from the binary.
+
 ## Design principles
 
 1. **Deterministic.** Same index + same query = same answer, always. No sampling, no similarity search.
