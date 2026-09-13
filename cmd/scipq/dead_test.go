@@ -41,6 +41,25 @@ var (
 	// (issue #8 pre-commit review, blocker 1).
 	deadTestLocalSym = "local 7"
 	deadPkgClause    = "go github.com/example/util `github.com/example/util`/"
+	// Go test-entry functions (issue #50): runtime-invoked by the testing
+	// framework, never statically referenced. Defined in *_test.go
+	// documents — excluded unconditionally, same rationale as main/init.
+	deadTestEntryFn = "go github.com/example/animal TestAnimal()."
+	deadBenchmarkFn = "go github.com/example/animal BenchmarkAnimal()."
+	deadFuzzFn      = "go github.com/example/animal FuzzAnimal()."
+	deadExampleFn   = "go github.com/example/animal ExampleAnimal()."
+	deadTestMainFn  = "go github.com/example/animal TestMain()."
+	// Real scip-go shape: backticked .test package path + "()."
+	// descriptor (the .test binary package scip-go records).
+	deadTestEntryRealShape = "scip-go gomod github.com/elodhorvath/scipq `github.com/elodhorvath/scipq/cmd/scipq.test`/TestParseUnifiedDiff()."
+	// NOT entry points: same name-prefix class, wrong context — a
+	// function named TestOrdinary in a non-test .go file is ordinary
+	// code (distinct symbol from deadTestEntryFn so the two defs cannot
+	// merge); a method named TestHelper is not an entry point
+	// (package-level rule only). Both are capitalized, so they surface
+	// as (exported) rows in the flag view.
+	deadTestNamedNonTestFile = "go github.com/example/animal TestOrdinary()."
+	deadTestMethodEntry      = "go github.com/example/animal Animal#TestHelper()."
 )
 
 // buildDeadFixtureIndex builds a dedicated synthetic index for the dead
@@ -63,6 +82,14 @@ var (
 //	                 def makes the referenced-locals filter load-bearing:
 //	                 without it the symbol enters computeDead's DefsAll
 //	                 walk and must be filtered)
+//	                 + test-entry functions (issue #50): Test*/Benchmark*/
+//	                 Fuzz*/Example*/TestMain, both synthetic and real
+//	                 scip-go .test-package shapes — excluded
+//	                 unconditionally; plus a method named TestHelper
+//	                 (NOT an entry point — classifies normally)
+//	nontest_testname.go  a Test*-prefixed function in a non-test file
+//	                 (NOT an entry point — the file-suffix scoping is
+//	                 what makes the rule load-bearing)
 func buildDeadFixtureIndex(t *testing.T) *index.ReverseIndex {
 	t.Helper()
 	def := func(sym string, line int32) *scip.Occurrence {
@@ -138,6 +165,29 @@ func buildDeadFixtureIndex(t *testing.T) *index.ReverseIndex {
 					// be vacuous (PR #48 review round 2).
 					def(deadTestLocalSym, 7),
 					ref(deadTestLocalSym, 8),
+					// Test-entry functions: zero-ref defs in a *_test.go
+					// document (issue #50). Excluded unconditionally.
+					def(deadTestEntryFn, 10),
+					def(deadBenchmarkFn, 12),
+					def(deadFuzzFn, 14),
+					def(deadExampleFn, 16),
+					def(deadTestMainFn, 18),
+					def(deadTestEntryRealShape, 20),
+					// A method named TestHelper in a test file: NOT an
+					// entry point (package-level rule only) — classifies
+					// normally (zero-ref dead unexported).
+					def(deadTestMethodEntry, 22),
+				},
+			},
+			{
+				RelativePath: "nontest_testname.go",
+				Occurrences: []*scip.Occurrence{
+					// Test* name, but the file does not end in "_test.go" —
+					// ordinary code, must classify normally (zero-ref dead
+					// exported). Distinct symbol from the test-file plant so
+					// the two defs cannot merge; this is the plant that makes
+					// the file-suffix scoping load-bearing.
+					def(deadTestNamedNonTestFile, 3),
 				},
 			},
 		},
@@ -247,6 +297,45 @@ func TestIsEntryPoint(t *testing.T) {
 	}
 }
 
+// TestIsTestEntryPoint pins the test-entry predicate (issue #50): the
+// Test*/Benchmark*/Fuzz*/Example* prefix on a package-level symbol whose
+// defining file is a *_test.go document. The file-suffix scoping is what
+// keeps a function named TestFoo in a non-test .go file classifying
+// normally, and the no-'#' guard keeps methods out of the class.
+func TestIsTestEntryPoint(t *testing.T) {
+	tests := []struct {
+		sym  string
+		file string
+		want bool
+	}{
+		// The four classes + TestMain, in a test file.
+		{"go github.com/example/animal TestAnimal().", "animal_test.go", true},
+		{"go github.com/example/animal BenchmarkAnimal().", "animal_test.go", true},
+		{"go github.com/example/animal FuzzAnimal().", "animal_test.go", true},
+		{"go github.com/example/animal ExampleAnimal().", "animal_test.go", true},
+		{"go github.com/example/animal TestMain().", "animal_test.go", true},
+		// Real scip-go .test-package shape.
+		{"scip-go gomod github.com/elodhorvath/scipq `github.com/elodhorvath/scipq/cmd/scipq.test`/TestParseUnifiedDiff().", "parse_test.go", true},
+		// Trailing-dot descriptor form.
+		{"go github.com/example/animal TestAnimal.", "animal_test.go", true},
+		// Wrong context: non-test file — ordinary code.
+		{"go github.com/example/animal TestAnimal().", "animal.go", false},
+		{"go github.com/example/animal TestOrdinary().", "nontest_testname.go", false},
+		// Wrong context: member symbols are never entry points.
+		{"go github.com/example/animal Animal#TestHelper().", "animal_test.go", false},
+		// Not a test-entry name.
+		{"go github.com/example/animal helper().", "animal_test.go", false},
+		{"go github.com/example/animal Testing().", "animal_test.go", false},
+		{"local 0", "animal_test.go", false},
+		{"", "animal_test.go", false},
+	}
+	for _, tt := range tests {
+		if got := isTestEntryPoint(tt.sym, tt.file); got != tt.want {
+			t.Errorf("isTestEntryPoint(%q, %q) = %v, want %v", tt.sym, tt.file, got, tt.want)
+		}
+	}
+}
+
 func TestDeadMarkers(t *testing.T) {
 	tests := []struct {
 		name string
@@ -275,8 +364,8 @@ func TestComputeDead(t *testing.T) {
 		if res.Total != 5 {
 			t.Fatalf("Total = %d, want 5\n%+v", res.Total, res.Groups)
 		}
-		if res.ExportedHidden != 2 {
-			t.Errorf("ExportedHidden = %d, want 2 (DeadExport + TestOnlyExport)", res.ExportedHidden)
+		if res.ExportedHidden != 4 {
+			t.Errorf("ExportedHidden = %d, want 4 (DeadExport + TestOnlyExport + TestHelper + TestOrdinary)", res.ExportedHidden)
 		}
 		// Dead unexported: zero refs, listed plain.
 		s := findDead(res, deadMethodSym)
@@ -329,11 +418,24 @@ func TestComputeDead(t *testing.T) {
 				t.Errorf("live symbol %q listed as dead", live)
 			}
 		}
-		// Unconditional exclusions never appear — both entry-point shapes.
-		for _, excluded := range []string{deadMainFn, deadInitFn, deadMainRealShape, deadInitRealShape, deadPkgClause} {
+		// Unconditional exclusions never appear — both entry-point shapes
+		// and every test-entry class (issue #50).
+		for _, excluded := range []string{
+			deadMainFn, deadInitFn, deadMainRealShape, deadInitRealShape, deadPkgClause,
+			deadTestEntryFn, deadBenchmarkFn, deadFuzzFn, deadExampleFn, deadTestMainFn, deadTestEntryRealShape,
+		} {
 			if findDead(res, excluded) != nil {
 				t.Errorf("excluded symbol %q listed: %+v", excluded, res.Groups)
 			}
+		}
+		// Same name-prefix class, wrong context: both classify normally.
+		// TestOrdinary (non-test file) is exported — hidden by default,
+		// listed in the flag view; TestHelper (method) likewise.
+		if findDead(res, deadTestNamedNonTestFile) != nil {
+			t.Errorf("TestOrdinary listed in default view (exported filter must dominate): %+v", res.Groups)
+		}
+		if findDead(res, deadTestMethodEntry) != nil {
+			t.Errorf("TestHelper listed in default view (exported filter must dominate): %+v", res.Groups)
 		}
 	})
 
@@ -358,8 +460,8 @@ func TestComputeDead(t *testing.T) {
 
 	t.Run("include-exported view: exported rows listed with markers", func(t *testing.T) {
 		res := computeDead(ri, true)
-		if res.Total != 7 {
-			t.Fatalf("Total = %d, want 7\n%+v", res.Total, res.Groups)
+		if res.Total != 9 {
+			t.Fatalf("Total = %d, want 9\n%+v", res.Total, res.Groups)
 		}
 		if res.ExportedHidden != 0 {
 			t.Errorf("ExportedHidden = %d, want 0 (nothing filtered)", res.ExportedHidden)
@@ -373,6 +475,28 @@ func TestComputeDead(t *testing.T) {
 		}
 		if s.Line != 7 {
 			t.Errorf("DeadExport Line = %d, want 7 (1-based)", s.Line)
+		}
+		// Test-entry functions are excluded from the flag view too —
+		// unconditional means unconditional (issue #50).
+		for _, excluded := range []string{deadTestEntryFn, deadBenchmarkFn, deadFuzzFn, deadExampleFn, deadTestMainFn, deadTestEntryRealShape} {
+			if findDead(res, excluded) != nil {
+				t.Errorf("test-entry symbol %q listed in flag view (must be excluded): %+v", excluded, res.Groups)
+			}
+		}
+		// The wrong-context plants DO appear in the flag view: TestOrdinary
+		// (non-test file) and TestHelper (method) are exported zero-ref
+		// symbols — honestly labeled, not entry points.
+		s = findDead(res, deadTestNamedNonTestFile)
+		if s == nil {
+			t.Errorf("TestOrdinary missing from flag view (non-test file must classify normally): %+v", res.Groups)
+		} else if s.File != "nontest_testname.go" || !s.Exported {
+			t.Errorf("TestOrdinary = %+v, want exported row in nontest_testname.go", s)
+		}
+		s = findDead(res, deadTestMethodEntry)
+		if s == nil {
+			t.Errorf("TestHelper missing in flag view (method must classify normally): %+v", res.Groups)
+		} else if !s.Exported || s.TestOnly {
+			t.Errorf("TestHelper = %+v, want exported only", s)
 		}
 	})
 
@@ -430,7 +554,7 @@ func TestRunDeadHuman(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"5 dead-code candidates · 2 groups (2 exported hidden)",
+		"5 dead-code candidates · 2 groups (4 exported hidden)",
 		"deadMethod  animal.go:5",
 		"testOnlyHelper  animal.go:11  (test-only)",
 		"local 0  locals.go:2",
@@ -460,7 +584,7 @@ func TestRunDeadHumanIncludeExported(t *testing.T) {
 		t.Errorf("stderr not empty: %q", errb.String())
 	}
 	for _, want := range []string{
-		"7 dead-code candidates · 2 groups",
+		"9 dead-code candidates · 2 groups",
 		"DeadExport  animal.go:7  (exported)",
 		// Both markers, deterministic order (issue #8 review pin).
 		"TestOnlyExport  animal.go:9  (test-only) (exported)",
@@ -509,8 +633,8 @@ func TestRunDeadJSON(t *testing.T) {
 	if res.Total != 5 {
 		t.Errorf("JSON total = %d, want 5", res.Total)
 	}
-	if res.ExportedHidden != 2 {
-		t.Errorf("JSON exportedHidden = %d, want 2", res.ExportedHidden)
+	if res.ExportedHidden != 4 {
+		t.Errorf("JSON exportedHidden = %d, want 4", res.ExportedHidden)
 	}
 	if len(res.Groups) != 2 {
 		t.Fatalf("JSON groups = %d, want 2\n%s", len(res.Groups), out.String())
@@ -546,8 +670,8 @@ func TestRunDeadJSONIncludeExported(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &res); err != nil {
 		t.Fatalf("stdout is not valid JSON: %v\n%s", err, out.String())
 	}
-	if res.Total != 7 || res.ExportedHidden != 0 {
-		t.Errorf("JSON totals = %d/%d, want 7/0", res.Total, res.ExportedHidden)
+	if res.Total != 9 || res.ExportedHidden != 0 {
+		t.Errorf("JSON totals = %d/%d, want 9/0", res.Total, res.ExportedHidden)
 	}
 	// The exported∧test-only combination: both booleans true, unambiguous
 	// in JSON regardless of marker rendering (issue #8 review pin).
