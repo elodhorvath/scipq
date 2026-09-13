@@ -41,12 +41,15 @@ func TestExitCodeContract(t *testing.T) {
 		{"callers no args", []string{"callers"}, exitUsage},
 		{"callers two args", []string{"callers", "a", "b"}, exitUsage},
 		{"callers empty arg", []string{"callers", ""}, exitUsage},
-		{"stub verb skeleton", []string{"skeleton"}, exitUsage},
+		{"skeleton no args", []string{"skeleton"}, exitUsage},
+		{"skeleton two args", []string{"skeleton", "a", "b"}, exitUsage},
+		{"skeleton empty arg", []string{"skeleton", ""}, exitUsage},
 		{"stub verb dead", []string{"dead"}, exitUsage},
 
 		// Missing index: 2 (loader stubbed to the missing-index code).
 		{"map missing index", []string{"map"}, exitNoIndex},
 		{"callers missing index", []string{"callers", "Animal#Speak"}, exitNoIndex},
+		{"skeleton missing index", []string{"skeleton", "animal.go"}, exitNoIndex},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -83,6 +86,7 @@ func TestUsagePrecedesMissingIndex(t *testing.T) {
 		{"map positional arg", []string{"map", "extra"}},
 		{"callers two args", []string{"callers", "a", "b"}},
 		{"callers no args", []string{"callers"}},
+		{"skeleton no args", []string{"skeleton"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, errb := captureWriter(t)
@@ -97,7 +101,7 @@ func TestUsagePrecedesMissingIndex(t *testing.T) {
 
 func TestStubVerbsHiddenFromHelp(t *testing.T) {
 	// Stubs stay invocable but must not read as real verbs in help or
-	// completion output. blast is live and must be listed.
+	// completion output. Live verbs must be listed.
 	_, errb := captureWriter(t)
 	ri := loadFixtureIndex(t)
 	code := runWith(t, []string{}, ri)
@@ -105,12 +109,12 @@ func TestStubVerbsHiddenFromHelp(t *testing.T) {
 		t.Fatalf("bare invocation exit = %d, want %d", code, exitUsage)
 	}
 	usage := errb.String()
-	for _, stub := range []string{"skeleton", "dead"} {
+	for _, stub := range []string{"dead"} {
 		if contains(usage, stub) {
 			t.Errorf("usage output lists stub verb %q:\n%s", stub, usage)
 		}
 	}
-	for _, live := range []string{"map", "callers", "blast"} {
+	for _, live := range []string{"map", "callers", "blast", "skeleton"} {
 		if !contains(usage, live) {
 			t.Errorf("usage output missing live verb %q:\n%s", live, usage)
 		}
