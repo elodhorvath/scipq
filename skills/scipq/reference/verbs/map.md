@@ -89,11 +89,14 @@ Reading: `./` is the densest cluster (4 symbols, hub `Speak` referenced
 `services/zoo.go` attracts the most references repo-wide.
 
 On a real scip-go index with build-cache leakage, the header carries the
-hidden count:
+hidden count. Verified against scipq's own self-index (CI artifact):
 
 ```bash
 $ scipq map
-14 files · 368 symbols (3 external docs hidden)
-./  2 files · 4 symbols   hubs: Speak (3←)
+16 files · 461 symbols (2 external docs hidden)
+cmd/scipq/  13 files · 408 symbols   hubs: exitOK (72←), …
 …
 ```
+
+The two hidden docs are the `.test` binary-package artifacts scip-go
+records under the Go build cache.
