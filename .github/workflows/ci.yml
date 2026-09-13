@@ -129,12 +129,14 @@ jobs:
 
       - name: Install scip-go v0.2.7
         run: |
-          curl -fsSL -o /tmp/scip-go.tar.gz \
+          # Download under the asset's real filename: the committed checksum
+          # file lists that name, and sha256sum -c resolves it relative to cwd.
+          curl -fsSL -o /tmp/scip-go-linux-amd64.tar.gz \
             https://github.com/scip-code/scip-go/releases/download/v0.2.7/scip-go-linux-amd64.tar.gz
           # Tamper check (issue #39): verify against the checksum recorded
           # from the release's .sha256 sidecar, independently confirmed.
           cd /tmp && sha256sum -c "$GITHUB_WORKSPACE/.github/workflows/scip-go-v0.2.7-linux-amd64.sha256"
-          tar -xzf /tmp/scip-go.tar.gz -C /usr/local/bin scip-go
+          tar -xzf /tmp/scip-go-linux-amd64.tar.gz -C /usr/local/bin scip-go
           scip-go --version
 
       - name: Index this repo
