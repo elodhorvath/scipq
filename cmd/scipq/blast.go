@@ -35,10 +35,13 @@ var stdin io.Reader = os.Stdin
 // ImpactedSymbol is one symbol affected by the diff: how it relates to the
 // change, and whether it has any test coverage.
 type ImpactedSymbol struct {
-	Symbol   string `json:"symbol"`
-	Short    string `json:"short"`
-	File     string `json:"file"`
-	Line     int32  `json:"line"` // 1-based
+	Symbol string `json:"symbol"`
+	Short  string `json:"short"`
+	// File and Line are omitted when there is no definition site —
+	// broken refs (referenced but undefined) carry neither. An absent
+	// "file" is the broken-ref marker in JSON output.
+	File     string `json:"file,omitempty"`
+	Line     int32  `json:"line,omitempty"` // 1-based
 	Reason   string `json:"reason"`
 	Untested bool   `json:"untested"`
 }
