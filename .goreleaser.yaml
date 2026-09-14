@@ -9,7 +9,11 @@ builds:
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w -X main.skillVersion={{ .Version }}
+      # .Tag is the full tag (e.g. "v0.4.0"); .Version strips the v prefix.
+      # Stamp the tag form so the binary's reported version matches the
+      # install command (go install ...@v0.4.0) and the verify-release
+      # assertion in .github/workflows/release.yml.
+      - -s -w -X main.skillVersion={{ .Tag }}
     goos:
       - darwin
       - linux

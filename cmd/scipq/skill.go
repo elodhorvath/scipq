@@ -35,8 +35,9 @@ import (
 
 // skillVersion is the embedded skill's version: the binary's version,
 // injected at release build time by goreleaser via
-// -ldflags "-X main.skillVersion={{ .Version }}" (.goreleaser.yaml);
-// dev builds report "dev". The installed copy carries a
+// -ldflags "-X main.skillVersion={{ .Tag }}" (.goreleaser.yaml) — the full
+// tag (e.g. "v0.4.0"), matching the install command's form; dev builds
+// report "dev". The installed copy carries a
 // .scipq-version marker with this value — filesystem-side skew
 // detection, since agents won't run `scipq skill` to check.
 var skillVersion = "dev"

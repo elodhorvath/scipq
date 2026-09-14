@@ -57,7 +57,7 @@ jobs:
         working-directory: /tmp/verify
         run: |
           tar -xzf scipq_linux_amd64.tar.gz scipq
-          # goreleaser stamps skillVersion={{ .Version }} = the full tag
+          # goreleaser stamps skillVersion={{ .Tag }} = the full tag
           # (e.g. "v0.3.0"); the skill summary prints it verbatim. Assert the
           # tag form — a build that regressed to "dev" fails this grep.
           reported="$(./scipq skill | head -1)"
