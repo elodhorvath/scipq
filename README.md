@@ -324,7 +324,7 @@ No candidates → `no dead symbols`, exit 0. Missing index exits 2.
 ## Verbs
 
 | Verb | Question it answers |
-|---|---|
+| --- | --- |
 | `map` | What is this repo? Where are the hubs and hotspots? |
 | `callers` | Who uses this symbol? Who implements this interface? |
 | `blast` | What can my change break? |

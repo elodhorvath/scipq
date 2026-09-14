@@ -80,8 +80,8 @@ When the user says "work on issue N" (or similar):
   differ (different command, different input, or a fix applied). If you
   cannot state what you changed between attempt N and attempt N+1, you are
   looping.
-## Code conventions
 
+## Code conventions
 
 - **Error handling:** wrap with `fmt.Errorf("verb: %w", err)`; never discard errors; never panic outside init-time invariant checks.
 - **CLI:** subcommand per verb (`map`, `callers`, `blast`, `skeleton`, `dead`), flag style matches stdlib `flag`/`pflag` patterns used in `cmd/`. Exit codes: 0 success, 1 usage error, 2 missing index. Every verb supports `--json`.

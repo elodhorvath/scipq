@@ -15,7 +15,7 @@ the graph answer that would otherwise cost several file reads.
 Ask the question, get the verb:
 
 | Question | Verb |
-|---|---|
+| --- | --- |
 | Who uses / references / calls X? Who implements this interface? | `callers` |
 | What is this repo/package? Where are the hubs and hotspots? | `map` |
 | What breaks if I change X? (given a diff) | `blast` |

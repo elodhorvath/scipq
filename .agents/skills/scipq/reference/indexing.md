@@ -8,7 +8,7 @@ rules an agent must follow when no index is available.
 ## Indexer per language
 
 | Language | Indexer | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Go | `scip-go` | Pre-v0.3.x indexes leak `.test` build-cache artifacts as out-of-root documents. Upgrade the indexer, or rely on scipq's built-in out-of-root filter (`externalDocsHidden` in `map` output). |
 | C# | `scip-dotnet` | `scip-dotnet index MySolution.sln --output index.scip` |
 | TypeScript / JavaScript | `scip-typescript` | Run against the project's `tsconfig.json`. |
