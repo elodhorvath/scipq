@@ -1,70 +1,71 @@
-# What's new in v0.3.0
+# What's new in v0.4.0
 
-New in v0.3.0: the planned verb set is complete — `skeleton` and `dead`
-join `map`, `callers`, and `blast` — and an index-layer filter keeps
-external build artifacts out of every verb's output.
+New in v0.4.0: the agent skill ships inside the binary. One install now
+delivers both the tool and the skill that teaches agents to use it —
+version-locked by construction — plus a new `skill` verb, a Windows CI
+guard, and machine-checked release verification.
 
-## New verb: `skeleton` — file API surface
+## The `skill` verb — tool and skill in one artifact
 
-`scipq skeleton <file>` lists every symbol defined in a file, no bodies:
-display name, best-effort kind (indexer-recorded when available, else
-derived from the symbol descriptor grammar), 1-based start line, and an
-exported marker (case-based convention, documented as a heuristic).
-
-```bash
-$ scipq skeleton animal.go
-animal.go  (2 symbols)
-     2  type    Animal  +exported
-     3  method  Speak   +exported
-```
-
-Resolution is exact-path first, then suffix match at a `/` boundary;
-ambiguity lists all matches and exits 1. SCIP locals and bare package
-clauses are dropped — they carry no API information.
-
-## New verb: `dead` — dead-code candidates
-
-`scipq dead` lists definitions with zero reference sites anywhere in the
-index, grouped by directory — the deletion-shortlist verb, with every
-classification rule documented as a heuristic and kept minimal.
+The scipq skill (decision policy, agent-UX contract, per-verb reference,
+indexing playbook) is embedded in the binary at build time and projected
+three ways:
 
 ```bash
-$ scipq dead
-5 dead-code candidates · 2 groups (2 exported hidden)
+scipq skill install    # → ~/.agents/skills/scipq (AgentSkills location
+                       #   scanned by OpenClaw, Copilot user scope, and
+                       #   Claude-compatible loaders)
+scipq skill print map  # read any page without installing
+scipq skill snippet    # ready-to-paste block for repo instructions files
 ```
 
-- **Test-only** symbols (every reference from `*_test.go` documents) are
-  listed with a `(test-only)` marker, not dropped.
-- **Exported** symbols are excluded by default — their consumers may
-  live outside the index — and revealed by `--include-exported` with an
-  `(exported)` marker; the header reports how many were hidden.
-- **Excluded unconditionally**: bare package clauses, `main`/`init`, and
-  Go test-entry functions (`Test*`/`Benchmark*`/`Fuzz*`/`Example*`,
-  including `TestMain`, in `*_test.go` documents) — all runtime-invoked,
-  never statically referenced.
-- **Locals are kept when unreferenced**: an unused local is the strongest
-  dead signal there is — deliberately diverging from `skeleton`, which
-  drops them. Same symbol class, opposite questions, opposite answers.
+- `install` copies the full skill tree (7 files + a `.scipq-version`
+  marker) into an agent skills directory — `~/.agents/skills/scipq/` by
+  default, `--target` for others. Idempotent: re-running after an
+  upgrade refreshes the copy. The installed version always matches the
+  binary's — they ship in the same artifact, by construction.
+- `print` is the zero-install read path: bare (or `SKILL.md`) prints the
+  main skill file, a verb name its reference page, `--list` the page
+  inventory. Works for any agent with shell access, no filesystem
+  assumptions.
+- `snippet` emits the decision table + contract summary for
+  `.github/copilot-instructions.md`-style files. scipq never edits your
+  files — the block lands via an explicit, reviewable copy.
 
-## Index hygiene: out-of-root documents filtered at load
+The skill's canonical home moves to `.agents/skills/scipq/` in this repo
+— a directory Copilot's agent tooling scans directly, mirroring the
+installed layout.
 
-SCIP requires document paths to stay inside the project root; real
-scip-go indexes leak test-compile artifacts under the Go build cache.
-Those documents are now dropped at load time for every verb — the
-predicate is metadata-independent and unconditional: an absolute path,
-or a leading `..` after cleaning, is dispositive on its own. `map`
-surfaces the count as `externalDocsHidden` in JSON and appends
-`(N external docs hidden)` to the header when nonzero; totals, clusters,
-and hotspots all describe the filtered project.
+## Indexing playbook (`reference/indexing.md`)
 
-On scipq's own self-index, the `.cache/go-build/…` clusters are gone and
-the CI self-index job now validates the filtered index — the dogfood is
-clean by construction.
+The skill now answers the setup question, not just the query question:
+which SCIP indexer per language (scip-go, scip-dotnet, scip-typescript,
+scip-python, scip-java), where the index lives (repo root, gitignored),
+when to rebuild (after branch switches, before `blast`, after large
+refactors), the stale-index warning signs, and the agent rule: **no
+index means say so and ask** — never silently fall back to grep and
+present textual matches as graph answers.
 
-## Agent-skill updates
+## CI: the Windows guard and full verb smoke coverage
 
-The scipq skill's decision table routes all five verbs, with per-verb
-reference pages (`reference/verbs/`) carrying JSON schemas, exit-code
-contracts, and worked examples verified against real indexes.
-Agent-instruction rules added: read the error before retrying, and no
-probe loops.
+- **`windows-test`**: every PR now runs vet + full test suite (with
+  `-race`) on a real Windows host. The trigger was real: the embedded-FS
+  platform bug this release's review cycle caught — addressed with
+  slash-form `io/fs` path handling and a dedicated invariant test —
+  would have broken every `skill` subcommand on the released Windows
+  archives, and an all-Linux CI could never see it.
+- **scipq-smoke** now covers all five query verbs *and* `skill`:
+  measured exit-code and output expectations against the committed
+  fixture, byte-exact `--list` inventory check, install smoke with
+  marker verification.
+- **`verify-release`**: the release workflow now checks itself — asset
+  set, checksum verification, exactly one correct install command in the
+  notes, and the released binary's reported version must equal the tag
+  (no silent `dev` stamps).
+
+## Version stamping
+
+Released binaries now report the full tag (`v0.4.0`) via `scipq skill`,
+matching the install command form; the `.scipq-version` marker written
+by `skill install` carries the same value, so tool/skill version skew is
+detectable from the filesystem.
