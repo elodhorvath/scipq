@@ -28,3 +28,48 @@ jobs:
           args: release --clean --release-notes=RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Verify-release (issue #56): codifies the manual release step-5 checklist.
+  # Nothing today would notice released binaries silently shipping
+  # skillVersion = "dev" (the CI-side half of the ldflags stamping fix from
+  # #54), or a checksum/asset set regressing.
+  verify-release:
+    runs-on: ubuntu-latest
+    needs: release
+    steps:
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/verify && cd /tmp/verify
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber
+          ls -lh
+
+      - name: Assert asset set and checksums
+        working-directory: /tmp/verify
+        run: |
+          test "$(ls scipq_*.tar.gz scipq_*.zip 2>/dev/null | wc -l)" -eq 5 \
+            || (echo "expected 5 archives" && ls && exit 1)
+          test -f checksums.txt || (echo "missing checksums.txt" && exit 1)
+          sha256sum -c checksums.txt
+
+      - name: Assert released binary reports the tag version
+        working-directory: /tmp/verify
+        run: |
+          tar -xzf scipq_linux_amd64.tar.gz scipq
+          # goreleaser stamps skillVersion={{ .Version }} = the full tag
+          # (e.g. "v0.3.0"); the skill summary prints it verbatim. Assert the
+          # tag form — a build that regressed to "dev" fails this grep.
+          reported="$(./scipq skill | head -1)"
+          echo "reported: $reported"
+          echo "$reported" | grep -qF "version $GITHUB_REF_NAME" \
+            || (echo "expected version $GITHUB_REF_NAME in skill summary (stamping regressed to dev?)" && exit 1)
+
+      - name: Assert release notes install line
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          body="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq '.body')"
+          count="$(printf '%s\n' "$body" | grep -cF "go install github.com/elodhorvath/scipq/cmd/scipq@$GITHUB_REF_NAME" || true)"
+          test "$count" -eq 1 \
+            || (echo "expected exactly 1 install line for $GITHUB_REF_NAME, found $count" && exit 1)
