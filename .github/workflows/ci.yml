@@ -35,6 +35,27 @@ jobs:
       - name: Test
         run: go test ./... -race
 
+  # Windows (issue #56): the #54 pre-commit review caught filepath addressing
+  # of the embedded FS that would have broken every skill subcommand on the
+  # released Windows archives. TestSkillEmbeddedPathsAreSlashForm guards the
+  # trap logically on every runner; this job makes it physical and exercises
+  # filepath.FromSlash install paths on a real Windows host.
+  windows-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -race
+
   scipq-smoke:
     runs-on: ubuntu-latest
     steps:
@@ -111,6 +132,85 @@ jobs:
           code=$?
           set -e
           test "$code" -eq 1 || (echo "expected exit 1, got $code" && exit 1)
+
+      # skeleton / dead / skill (issue #56): the pinned agent-UX contract
+      # (exit codes, stdout data-only) had zero smoke coverage. Expectations
+      # are measured against the committed fixture, not invented.
+
+      - name: Smoke — skeleton on committed fixture
+        run: |
+          set +e
+          ./scipq skeleton animal.go --index testdata/index.scip > /tmp/skeleton.out 2>/tmp/skeleton.err
+          code=$?
+          set -e
+          test "$code" -eq 0 || (echo "expected exit 0, got $code" && exit 1)
+          # Fixed-string greps: the output is column-aligned with runs of spaces.
+          grep -qF "animal.go  (2 symbols)" /tmp/skeleton.out || (echo "missing file header" && exit 1)
+          grep -qF "2  type    Animal  +exported" /tmp/skeleton.out || (echo "missing Animal type row" && exit 1)
+          grep -qF "3  method  Speak  +exported" /tmp/skeleton.out || (echo "missing Speak method row" && exit 1)
+
+      - name: Smoke — skeleton unknown file exits 1
+        run: |
+          set +e
+          ./scipq skeleton nosuchfile.go --index testdata/index.scip > /tmp/skeleton404.out 2>/tmp/skeleton404.err
+          code=$?
+          set -e
+          test "$code" -eq 1 || (echo "expected exit 1, got $code" && exit 1)
+          grep -q 'scipq: no indexed file matching' /tmp/skeleton404.err \
+            || (echo "missing scipq: stderr diagnostic" && exit 1)
+
+      - name: Smoke — dead on committed fixture
+        run: |
+          set +e
+          ./scipq dead --index testdata/index.scip > /tmp/dead.out 2>/tmp/dead.err
+          code=$?
+          set -e
+          test "$code" -eq 0 || (echo "expected exit 0, got $code" && exit 1)
+          grep -qF "no dead symbols" /tmp/dead.out || (echo "missing no-dead-symbols line" && exit 1)
+
+      - name: Smoke — skill print --list is the exact 7-page inventory
+        run: |
+          set +e
+          ./scipq skill print --list > /tmp/skilllist.out 2>/tmp/skilllist.err
+          code=$?
+          set -e
+          test "$code" -eq 0 || (echo "expected exit 0, got $code" && exit 1)
+          # Byte-exact line list, same style as the Go fixture
+          # (TestSkillEmbeddedPathsAreSlashForm).
+          printf '%s\n' \
+            'SKILL.md' \
+            'reference/indexing.md' \
+            'reference/verbs/blast.md' \
+            'reference/verbs/callers.md' \
+            'reference/verbs/dead.md' \
+            'reference/verbs/map.md' \
+            'reference/verbs/skeleton.md' > /tmp/skilllist.expected
+          diff -u /tmp/skilllist.expected /tmp/skilllist.out || (echo "skill page inventory drifted" && exit 1)
+
+      - name: Smoke — skill install into temp target
+        run: |
+          set +e
+          ./scipq skill install --target "$RUNNER_TEMP/skill" > /tmp/skillinstall.out 2>/tmp/skillinstall.err
+          code=$?
+          set -e
+          test "$code" -eq 0 || (echo "expected exit 0, got $code" && exit 1)
+          grep -qF "installed scipq skill" /tmp/skillinstall.out || (echo "missing install summary" && exit 1)
+          test -s "$RUNNER_TEMP/skill/.scipq-version" || (echo "missing non-empty .scipq-version" && exit 1)
+          test "$(find "$RUNNER_TEMP/skill" -type f | wc -l)" -eq 8 || (echo "expected 8 installed files" && exit 1)
+
+      - name: Smoke — skill snippet contains decision table
+        run: |
+          set +e
+          ./scipq skill snippet > /tmp/skillsnippet.out 2>/tmp/skillsnippet.err
+          code=$?
+          set -e
+          test "$code" -eq 0 || (echo "expected exit 0, got $code" && exit 1)
+          grep -qF "| Question | Verb |" /tmp/skillsnippet.out || (echo "missing decision-table header" && exit 1)
+          grep -qF "scipq skill print" /tmp/skillsnippet.out || (echo "missing skill print pointer" && exit 1)
+
+      - name: Smoke — skill snippet --json is valid JSON
+        run: |
+          ./scipq skill snippet --json | python3 -m json.tool > /dev/null
 
   # Self-index (issue #11): dogfood — index this repo with scip-go and
   # publish index.scip as a build artifact. Info-only: failure here does
