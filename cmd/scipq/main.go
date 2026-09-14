@@ -138,7 +138,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "usage: scipq <verb> [args] [--json]")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "verbs: map, callers, blast, skeleton, dead")
+	fmt.Fprintln(w, "verbs: map, callers, blast, skeleton, dead, skill")
 	fmt.Fprintln(w, "run 'scipq <verb> -h' for verb help")
 }
 
@@ -174,6 +174,7 @@ func newRootCommand(load indexLoader) *cli.Command {
 			blastCommand(load),
 			skeletonCommand(load),
 			deadCommand(load),
+			skillCommand(),
 		},
 		// Keep the verb list clean: no built-in "help" subcommand.
 		HideHelpCommand: true,

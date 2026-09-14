@@ -33,6 +33,32 @@ go install github.com/elodhorvath/scipq/cmd/scipq@latest
 Prebuilt binaries (macOS arm64/amd64, Linux amd64/arm64, Windows amd64) from
 [Releases](https://github.com/elodhorvath/scipq/releases).
 
+### Install the agent skill
+
+The binary embeds the agent skill, so one install ships tool + skill — and
+the installed copy always matches the binary's version by construction:
+
+```bash
+scipq skill install   # → ~/.agents/skills/scipq (AgentSkills location;
+                      #    scanned by OpenClaw, Copilot user scope, and
+                      #    Claude-compatible loaders)
+```
+
+- `--target <dir>` installs elsewhere (e.g. a repo's `.claude/skills/`).
+  Re-running refreshes the copy in place (idempotent); a
+  `.scipq-version` marker records the installing binary's version.
+- `scipq skill print [page]` reads the skill without installing — bare
+  (or `SKILL.md`) prints the main file, a verb name (`map`, `callers`, …)
+  its reference page, `--list` the page inventory. The universal read
+  path for any agent with shell access.
+- `scipq skill snippet` emits a ready-to-paste markdown block for repo
+  instructions files (`.github/copilot-instructions.md`, `AGENTS.md`) —
+  for team-shared, versioned-in-repo distribution. scipq never edits
+  your files; appending the snippet is an explicit, reviewable copy.
+
+All skill subcommands work offline from the embedded copy and support
+`--json`.
+
 ## Build an index (once per repo)
 
 `scipq` consumes indexes; it does not produce them. Use the indexer for your
@@ -304,18 +330,22 @@ No candidates → `no dead symbols`, exit 0. Missing index exits 2.
 | `blast` | What can my change break? |
 | `skeleton` | What's the API surface of this file? |
 | `dead` | What's defined but never referenced? |
+| `skill` | (meta) install, print, or snippet the embedded agent skill |
 
 ## Agent skill
 
-An agent-facing skill ships in this repo at [`skills/scipq/`](skills/scipq/SKILL.md):
-a decision policy (when to query instead of reading source), the agent-UX
-contract (`--json` data-only stdout, exit codes, persistent flags), and
-per-verb deep reference. Point your coding agent at that path — or copy it
-into your agent's skill directory; the format is agent-agnostic
+An agent-facing skill ships in this repo at
+[`.agents/skills/scipq/`](.agents/skills/scipq/SKILL.md) — a path on the
+standard AgentSkills scan roots, so agents that scan those directories see it
+in-repo too. It carries a decision policy (when to query instead of reading
+source), the agent-UX contract (`--json` data-only stdout, exit codes,
+persistent flags), and per-verb deep reference. The format is agent-agnostic
 ([AgentSkills](https://agentskills.io) frontmatter).
 
 The skill is maintained with every user-visible change (same PR as the
-change), so it never drifts from the binary.
+change), so it never drifts from the binary — and a fixture test
+mechanically asserts every `--flag` documented in a reference page exists
+on the corresponding verb.
 
 ## Design principles
 

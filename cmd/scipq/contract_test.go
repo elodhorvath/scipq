@@ -49,6 +49,19 @@ func TestExitCodeContract(t *testing.T) {
 		{"skeleton empty arg", []string{"skeleton", ""}, exitUsage},
 		{"dead positional arg", []string{"dead", "extra"}, exitUsage},
 
+		// skill subcommands: no index involved, so success rows run
+		// against the real embedded FS.
+		{"skill bare", []string{"skill"}, exitOK},
+		{"skill print", []string{"skill", "print"}, exitOK},
+		{"skill print page", []string{"skill", "print", "map"}, exitOK},
+		{"skill print list", []string{"skill", "print", "--list"}, exitOK},
+		{"skill snippet", []string{"skill", "snippet"}, exitOK},
+		{"skill unknown subcommand", []string{"skill", "bogus"}, exitUsage},
+		{"skill print two pages", []string{"skill", "print", "a", "b"}, exitUsage},
+		{"skill print traversal", []string{"skill", "print", "../x.md"}, exitUsage},
+		{"skill install positional", []string{"skill", "install", "extra"}, exitUsage},
+		{"skill snippet positional", []string{"skill", "snippet", "extra"}, exitUsage},
+
 		// Missing index: 2 (loader stubbed to the missing-index code).
 		{"map missing index", []string{"map"}, exitNoIndex},
 		{"callers missing index", []string{"callers", "Animal#Speak"}, exitNoIndex},

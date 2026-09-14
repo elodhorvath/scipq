@@ -64,6 +64,8 @@ These behaviors are pinned and safe to build on:
 ```bash
 # One-time: build the index with your language's SCIP indexer, e.g.:
 #   scip-dotnet index MySolution.sln --output index.scip
+# Full playbook (indexer per language, when to rebuild, stale-index signs):
+#   reference/indexing.md
 
 scipq map                          # orient: clusters, hubs, hotspots
 scipq callers Animal#Speak         # who uses this symbol
@@ -79,6 +81,8 @@ JSON schemas, and worked examples: see `reference/verbs/` —
 [blast](reference/verbs/blast.md),
 [skeleton](reference/verbs/skeleton.md),
 [dead](reference/verbs/dead.md).
+Index setup and freshness rules:
+[indexing](reference/indexing.md).
 
 ## Version posture
 
