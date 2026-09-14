@@ -16,7 +16,7 @@ Takes no positional arguments.
 ## Flags
 
 | Flag | Meaning |
-|---|---|
+| --- | --- |
 | `--limit N` | Cap directory clusters shown (default 10, `-1` for all). Truncation is noted in the output. |
 | `--json` | Machine-readable output (persistent root flag). |
 | `--index <path>` | Index location, default `./index.scip` (persistent root flag). |

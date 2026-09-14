@@ -33,7 +33,7 @@ List only `SymbolRole_Definition` occurrences in the document, minus:
    file.
 
 Package-level named declarations (`` `pkg`/maxSize. ``) are **kept** —
-they are the payload, not noise. No `--all` escape hatch in v1.
+they are the payload, not noise. No include-everything escape hatch in v1.
 
 ## JSON schema
 
