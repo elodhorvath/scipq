@@ -15,7 +15,7 @@ the graph answer that would otherwise cost several file reads.
 Ask the question, get the verb:
 
 | Question | Verb |
-|---|---|
+| --- | --- |
 | Who uses / references / calls X? Who implements this interface? | `callers` |
 | What is this repo/package? Where are the hubs and hotspots? | `map` |
 | What breaks if I change X? (given a diff) | `blast` |
@@ -64,6 +64,8 @@ These behaviors are pinned and safe to build on:
 ```bash
 # One-time: build the index with your language's SCIP indexer, e.g.:
 #   scip-dotnet index MySolution.sln --output index.scip
+# Full playbook (indexer per language, when to rebuild, stale-index signs):
+#   reference/indexing.md
 
 scipq map                          # orient: clusters, hubs, hotspots
 scipq callers Animal#Speak         # who uses this symbol
@@ -79,6 +81,8 @@ JSON schemas, and worked examples: see `reference/verbs/` —
 [blast](reference/verbs/blast.md),
 [skeleton](reference/verbs/skeleton.md),
 [dead](reference/verbs/dead.md).
+Index setup and freshness rules:
+[indexing](reference/indexing.md).
 
 ## Version posture
 

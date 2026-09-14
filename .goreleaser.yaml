@@ -8,6 +8,8 @@ builds:
     binary: scipq
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.skillVersion={{ .Version }}
     goos:
       - darwin
       - linux

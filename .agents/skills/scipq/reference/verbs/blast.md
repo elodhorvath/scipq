@@ -20,7 +20,7 @@ tracks hunk lengths, not just headers.
 ## Flags
 
 | Flag | Meaning |
-|---|---|
+| --- | --- |
 | `--depth N` | Transitive dependent depth (default 2). Implements chains are transitive and always fully expanded; depth cuts file-dependency hops. |
 | `--json` | Machine-readable output (persistent root flag). |
 | `--index <path>` | Index location, default `./index.scip` (persistent root flag). |
